@@ -1,4 +1,4 @@
-from math import pi, sin, cos, atan2, atan
+from math import pi, sin, cos, atan2, atan, acos
 
 def dist(a, b):
     return ((b[1] - a[1])**2 + (b[0] - a[0])**2)**0.5
@@ -9,13 +9,18 @@ def dubins_routes(start, goal, rad, spacing=1):
     return routes
 
 def get_dubins_paths(start, goal, rad):
-    CSCs = [('l', 'l'), ('r', 'r'), ('l', 'r'), ('r', 'l')]
     paths = []
+    CSCs = [('r', 'r'), ('l', 'l'), ('r', 'l'), ('l', 'r')]
     for CSC in CSCs:
         p = CSC_path(start, CSC[0], goal, CSC[1], rad)
         if p is not None:
             paths.append(p)
-    # CCCs = [('l', 'r', 'l'), ('r', 'l', 'r')]
+    if dist(start, goal) < (4 * rad):
+        CCCs = ['l', 'r']
+        for CCC in CCCs:
+            p = CCC_path(start, goal, CCC, rad)
+            if p is not None:
+                paths.append(p)
     return paths
 
 def CSC_path(start, start_dir, goal, goal_dir, rad):
@@ -55,11 +60,12 @@ def tangents(p1, p2):
     vx = (p2[0] - p1[0]) / d
     vy = (p2[1] - p1[1]) / d
 
-    signs = {'l': 1,
-             'r': -1}
+    signs = {('r', 'r'): (1, 1),
+             ('r', 'l'): (-1, 1),
+             ('l', 'r'): (-1, -1),
+             ('l', 'l'): (1, -1)}
 
-    sign1 = signs[p1[3].lower()]
-    sign2 = signs[p2[3].lower()]
+    (sign1, sign2) = signs[(p1[3].lower(), p2[3].lower())]
 
     c = (p1[2] - sign1 * p2[2]) / d
     if c**2 > 1:
@@ -99,14 +105,20 @@ def get_dubins_route_points(path, spacing):
         #we're in a CSC path
         Cs_l, Cs_p = arc_points(path[0], spacing)
         leftover = Cs_l - (len(Cs_p) - 1) * spacing
-        S_l, S_p = straight_points(path[0][1], path[1][1], spacing, leftover)
+        S_l, S_p = straight_points(path[0][1], path[1][0], spacing, leftover)
         leftover = (Cs_l + S_l) - (len(Cs_p) + len(S_p) - 1) * spacing
         Cg_l, Cg_p = arc_points(path[1], spacing, leftover)
         p = np.concatenate((Cs_p, S_p, Cg_p), axis=0)
         path_length = Cs_l + S_l + Cg_l
     elif len(path) == 3:
         # We're in a CCC path
-        pass
+        Cs_l, Cs_p = arc_points(path[0], spacing)
+        leftover = Cs_l - (len(Cs_p) - 1) * spacing
+        Cm_l, Cm_p = arc_points(path[1], spacing)
+        leftover = (Cs_l + Cm_l) - (len(Cs_p) + len(Cm_p) - 1) * spacing
+        Cg_l, Cg_p = arc_points(path[2], spacing, leftover)
+        p = np.concatenate((Cs_p, Cm_p, Cg_p), axis=0)
+        path_length = Cs_l + Cm_l + Cg_l
     return path_length, p
 
 def straight_points(p1, p2, spacing, leftover=0):
@@ -132,7 +144,10 @@ def arc_points(path, spacing, leftover=0):
     d = path[3]
     if d == 'r':
         start_theta = p1[2] - pi / 2
-        end_theta = p2[2] - pi / 2
+        if len(p2) == 2:
+            pass
+        else:
+            end_theta = p2[2] - pi / 2
         theta = end_theta - start_theta
         if theta < 0:
             theta += 2 * pi
@@ -166,33 +181,62 @@ def arc_theta(p1, p2, d):
         raise ValueError("d must be 'left' or 'right'.")
     return theta
 
-def CCC_path(start, start_dir, goal, goal_dir, rad):
+def CCC_path(start, goal, dir, rad):
     # get centre of Cstart
-    Cs = circle_centre(start, rad, start_dir)
-    Cg = circle_centre(goal, rad, goal_dir)
-    return [(0,0)]
+    Cs = circle_centre(start, rad, dir)
+    Cg = circle_centre(goal, rad, dir)
+    dx = Cg[0] - Cs[0]
+    dy = Cg[1] - Cs[1]
+    d = dist(Cs, Cg)
+    if d > 4 * rad:
+        return None
+    if dir == 'l':
+        theta = atan2(dy, dx) - acos(d / 4 / rad)
+    elif dir == 'r':
+        theta = atan2(dy, dx) + acos(d / 4 / rad)
+    Cm = (Cs[0] + 2 * rad * cos(theta), Cs[1] + 2 * rad * sin(theta))
+    ts = []
+    for c in [Cs, Cg]:
+        tx = Cm[0] + (c[0] - Cm[0])/2
+        dx = tx - c[0]
+        ty = Cm[1] + (c[1] - Cm[1])/2
+        dy = ty - c[1]
+        theta = (-atan2(dy, dx) + 5 * pi / 2)
+        if dir == 'l':
+            theta -= pi / 2
+        else:
+            theta += pi / 2
+        ts.append((tx, ty, theta % (2 * pi)))
+    if dir == 'l':
+        dir_m = 'r'
+    else:
+        dir_m = 'l'
+    
+    return [(start, ts[0], Cs, dir), (ts[0], ts[1], Cm, dir_m), (ts[1], goal, Cg, dir)]
 
-import numpy as np
-import random
-import matplotlib.pyplot as plt
 
-# p1 = (random.randint(0,100), random.randint(0,100), random.uniform(0, 2*pi))
-# p2 = (random.randint(0,100), random.randint(0,100), random.uniform(0, 2*pi))
-# rad = random.randint(1, 100)
+if __name__ == '__main__':
 
-p1 = (50, 50, 0)
-p2 = (100, 100, pi/2)
-rad = 5
+    import numpy as np
+    import random
+    import matplotlib.pyplot as plt
 
-routes = dubins_routes(p1, p2, rad, spacing=0.01)
-fig, ax = plt.subplots()
-ax.arrow(p1[0],p1[1],5*sin(p1[2]), 5*cos(p1[2]), head_width=0.5, head_length=1)
-ax.arrow(p2[0],p2[1],5*sin(p2[2]), 5*cos(p2[2]), head_width=0.5, head_length=1)
-for l, p in zip(['LSL', 'RSR', 'LSR', 'RSL'], routes):
-    pts = np.array(p[1])
-    x = pts[:,0]
-    y = pts[:,1]
-    ax.plot(x, y, label=l)
-plt.axis('equal')
-plt.legend()
-plt.show()
+    p1 = (random.randint(0,100), random.randint(0,100), random.uniform(0, 2*pi))
+    p2 = (random.randint(0,100), random.randint(0,100), random.uniform(0, 2*pi))
+    rad = random.randint(1, 20)
+
+    # p1 = (50, 50, 0)
+    # p2 = (100, 100, pi/2)
+    # rad = 20
+
+    routes = dubins_routes(p1, p2, rad, spacing=0.01)
+    fig, ax = plt.subplots()
+    ax.arrow(p1[0],p1[1],5*sin(p1[2]), 5*cos(p1[2]), head_width=0.5, head_length=1)
+    ax.arrow(p2[0],p2[1],5*sin(p2[2]), 5*cos(p2[2]), head_width=0.5, head_length=1)
+    for p in routes:
+        pts = np.array(p[1])
+        x = pts[:,0]
+        y = pts[:,1]
+        ax.plot(x, y)
+    plt.axis('equal')
+    plt.show()

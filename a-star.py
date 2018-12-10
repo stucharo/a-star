@@ -3,25 +3,14 @@ from math import sin, cos, asin, pi
 from copy import deepcopy
 import numpy as np
 from scipy.interpolate import griddata
+from queue import PriorityQueue
+import matplotlib.pyplot as plt
 
 from dubins import dubins_routes
 
-class PriorityQueue:
-    def __init__(self):
-        self.elements = []
-    
-    def empty(self):
-        return len(self.elements) == 0
-    
-    def put(self, item, priority, counter):
-        heapq.heappush(self.elements, (priority, counter, item))
-    
-    def get(self):
-        return heapq.heappop(self.elements)[2]
-
 spacing = 1
-bend_radius = [1, 2, 3, 4, 5]
-heading_tol = pi / 180
+bend_radius = [5]
+heading_tol = 3 * pi / 180
 
 class Grid:
     def __init__(self, eastings, northings, costs):
@@ -65,14 +54,14 @@ class Grid:
         end = (goal.x, goal.y, goal.heading)
         r = dubins_routes(start, end, min(bend_radius), spacing)
         r.sort(key=lambda x: x[0])
-        shortest_path_pts = r[0][1]
-        xs = shortest_path_pts[:,0]
-        ys = shortest_path_pts[:,1]
-        costs = self.get_cost(xs, ys)
-        cost = np.trapz(costs, dx=spacing)
+        for p in r:
+            xs = p[1][:,0]
+            ys = p[1][:,1]
+            costs = self.get_cost(xs, ys)
+            cost = np.trapz(costs, dx=spacing)
+            if not np.isnan(cost) and not np.isinf(cost):
+                break
         return cost
-
-
 
 def dist(p1, p2):
     return ((p1.x-p2.x)**2 + (p1.y-p2.y)**2)**0.5
@@ -123,45 +112,72 @@ class Point:
         return p
 
     def __eq__(self, p):
-        return dist(self, p) < spacing and abs(self.heading - p.heading) < heading_tol
+        return dist(self, p) < 1*spacing and abs(self.heading - p.heading) < heading_tol
+
+def plot_graph(start, goal, graph, path_ends):
+    fig, ax = plt.subplots()
+    ax.arrow(start.x, start.y, 5*sin(start.heading), 5*cos(start.heading), head_width=0.5, head_length=1)
+    ax.arrow(goal.x, goal.y, 5*sin(goal.heading), 5*cos(goal.heading), head_width=0.5, head_length=1)
+    for e in path_ends:
+        p = e[2]
+        pts = [(p.x, p.y)]
+        while p.previous is not None:
+            pts.append((p.previous.x, p.previous.y))
+            p = p.previous
+        pts = np.array(pts)
+        plt.plot(pts[:,0], pts[:,1])
+    plt.axis([0,20,0,20], option='equal')
+    plt.show()
 
 def a_star_pipe(graph, start, goal):
     path_ends = PriorityQueue()
-    path_ends.put(start, 0, 0)
+    path_ends.put((0, 0, start))
     counter = 1
-    
+    max_priority = 0
+
     while not path_ends.empty():
         # Get path end most likely to be cheapest
-        end_point = path_ends.get()
-        
-        # are we at the end? 
-        if end_point == goal:
-            break
-        
-        neighbours = graph.neighbours(end_point)
+        end_point = path_ends.get()[2]
 
-        for neighbour in neighbours:
-            print(neighbour.x, neighbour.y, neighbour.heading)
-            priority = neighbour.cost + graph.heuristic_cost(neighbour, goal)
-            path_ends.put(neighbour, priority, counter)
+        if counter % 50 == 0:
+            plot_graph(start, goal, graph, path_ends.queue)
+
+        for neighbour in graph.neighbours(end_point):
+            if neighbour == goal:
+                return neighbour
+            est_cost = neighbour.cost + graph.heuristic_cost(neighbour, goal)
+            if np.isnan(est_cost) or np.isinf(est_cost):
+                priority = 10 * max_priority
+            else:
+                priority = est_cost
+            path_ends.put((priority, counter, neighbour))
+            plt.plot([end_point.x, neighbour.x], [end_point.y, neighbour.y])
             counter += 1
-    
+
     return end_point
 
 # create grid
 X = np.linspace(0, 20, 21)
 Y = np.linspace(0, 20, 21)
 X, Y = np.meshgrid(X, Y)
-Z = np.ones(X.shape)
+Z = np.random.uniform(0,100, size=X.shape)
 graph = Grid(X, Y, Z)
 
 start = Point(2, 2)
 start.heading = 0
-goal = Point(8, 8)
+goal = Point(15, 15)
 goal.heading = pi/2
 
 pt = a_star_pipe(graph, start, goal)
+fig, ax = plt.subplots()
+ax.arrow(start.x, start.y, 5*sin(start.heading), 5*cos(start.heading), head_width=0.5, head_length=1)
+ax.arrow(goal.x, goal.y, 5*sin(goal.heading), 5*cos(goal.heading), head_width=0.5, head_length=1)
+pts = [(pt.x, pt.y)]
 while pt.previous is not None:
-    print(pt.x, pt.y)
+    pts.append((pt.previous.x, pt.previous.y))
     pt = pt.previous
+pts = np.array(pts)
+plt.plot(pts[:,0], pts[:,1])
+plt.axis([0,20,0,20], option='equal')
+plt.show()
 

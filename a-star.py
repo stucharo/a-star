@@ -4,6 +4,8 @@ from copy import deepcopy
 import numpy as np
 from scipy.interpolate import griddata
 
+from dubins import dubins_routes
+
 class PriorityQueue:
     def __init__(self):
         self.elements = []
@@ -50,9 +52,6 @@ class Grid:
                 and np.amin(self.northings) <= pt.y <= np.amax(self.northings))
 
     def cost(self, prev_p, p):
-        # This becomes our heuristic
-        # this is tricky, we have to use 2D interpolation for each increment of spacing
-        # between the 2 pts.
         d = dist(prev_p, p)
         pts = max(2, myround(d / spacing, spacing) + 1)
         xs = np.linspace(prev_p.x, p.x, pts)
@@ -60,6 +59,20 @@ class Grid:
         costs = self.get_cost(xs, ys)
         cost = np.trapz(costs, dx=d/(pts-1))
         return cost
+    
+    def heuristic_cost(self, p, goal):
+        start = (p.x, p.y, p.heading)
+        end = (goal.x, goal.y, goal.heading)
+        r = dubins_routes(start, end, min(bend_radius), spacing)
+        r.sort(key=lambda x: x[0])
+        shortest_path_pts = r[0][1]
+        xs = shortest_path_pts[:,0]
+        ys = shortest_path_pts[:,1]
+        costs = self.get_cost(xs, ys)
+        cost = np.trapz(costs, dx=spacing)
+        return cost
+
+
 
 def dist(p1, p2):
     return ((p1.x-p2.x)**2 + (p1.y-p2.y)**2)**0.5
@@ -129,22 +142,22 @@ def a_star_pipe(graph, start, goal):
 
         for neighbour in neighbours:
             print(neighbour.x, neighbour.y, neighbour.heading)
-            priority = neighbour.cost + graph.cost(neighbour, goal)
+            priority = neighbour.cost + graph.heuristic_cost(neighbour, goal)
             path_ends.put(neighbour, priority, counter)
             counter += 1
     
     return end_point
 
 # create grid
-X = np.linspace(0, 50, 6)
-Y = np.linspace(0, 50, 6)
+X = np.linspace(0, 20, 21)
+Y = np.linspace(0, 20, 21)
 X, Y = np.meshgrid(X, Y)
 Z = np.ones(X.shape)
 graph = Grid(X, Y, Z)
 
-start = Point(2.4, 6.7)
-start.heading = pi/2
-goal = Point(40.4, 6.7)
+start = Point(2, 2)
+start.heading = 0
+goal = Point(8, 8)
 goal.heading = pi/2
 
 pt = a_star_pipe(graph, start, goal)

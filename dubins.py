@@ -1,4 +1,5 @@
 from math import pi, sin, cos, atan2, atan, acos
+import numpy as np
 
 def dist(a, b):
     return ((b[1] - a[1])**2 + (b[0] - a[0])**2)**0.5
@@ -214,10 +215,8 @@ def CCC_path(start, goal, dir, rad):
     
     return [(start, ts[0], Cs, dir), (ts[0], ts[1], Cm, dir_m), (ts[1], goal, Cg, dir)]
 
-
 if __name__ == '__main__':
 
-    import numpy as np
     import random
     import matplotlib.pyplot as plt
 

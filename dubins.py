@@ -1,11 +1,12 @@
 from math import pi, sin, cos, atan2, atan, acos
 import numpy as np
+from a_star import Point
 
 def dist(a, b):
     return ((b[1] - a[1])**2 + (b[0] - a[0])**2)**0.5
 
-def dubins_routes(start, goal, rad, spacing=1):
-    paths = get_dubins_paths(start, goal, rad)
+def dubins_routes(start, goal, min_bend_rad, spacing):
+    paths = get_dubins_paths(start, goal, min_bend_radius, min_straight_length, spacing)
     routes = [get_dubins_route_points(path, spacing) for path in paths]
     return routes
 
@@ -35,14 +36,14 @@ def get_dubins_paths(start, goal, min_bend_radius, min_straight_length, spacing)
     the minimum straight length reduces to zero we will return a
     conventional CCC path.
     """
-    tangents = CSC_tangents(start, goal, min_bend_radius, spacing, min_straight_length)
-    if len(tangents) == 0:
+    ts = CSC_tangents(start, goal, min_bend_radius, spacing, min_straight_length)
+    if len(ts) == 0:
         # We have no valid CSC paths because they all violate our minimum straight length
         # constraint. Now we need to compute CSCSC paths. We have far more options here
         # because we have an extra circle. Potential routes are 'RSRSR', 'RSRSL', 'RSLSR',
         # 'RSLSL', 'LSRSR', 'LSRSL', 'LSLSR' and 'LSLSL'. The direction of the mid circle
         # determines it's location between the start and goal.
-        tangents = CSCSC_tangents(start, goal, min_bend_rad, spacing, min_straight_length)
+        ts = CSCSC_tangents(start, goal, min_bend_radius, spacing, min_straight_length)
     
     paths = []
     CSCs = [('r', 'r'), ('l', 'l'), ('r', 'l'), ('l', 'r')]
@@ -62,7 +63,7 @@ def CSC_tangents(start, goal, min_bend_rad, spacing, min_straight_length):
     """ Compute tangent start and end points for a
     Circle-Straight-Circle path.
     """
-    tangents = []
+    ts = []
     if start.theta > 0:
         # we are already on a bend and we know the start direction is left (and we must
         # continue it to maintain our constant bend radius criteria). This limits us to
@@ -74,7 +75,7 @@ def CSC_tangents(start, goal, min_bend_rad, spacing, min_straight_length):
             t = tangents((cs[0], cs[1], rs, 'l'),
                          (cg[0], cg[1], min_bend_rad, d))
             if t is not None and dist(t[0], t[1]) > min_straight_length:
-                tangents.append(tangent)
+                ts.append(t)
     elif start.theta > 0:
         # we are already on a bend and we know the start direction is right (and we must
         # continue it to maintain our constant bend radius criteria). This limits us to
@@ -86,7 +87,7 @@ def CSC_tangents(start, goal, min_bend_rad, spacing, min_straight_length):
             t = tangents((cs[0], cs[1], rs, 'r'),
                          (cg[0], cg[1], min_bend_rad, d))
             if t is not None and dist(t[0], t[1]) > min_straight_length:
-                tangents.append(t)
+                ts.append(t)
     else:
         # we are on a straight section so we should expect up to 4 tangents to be
         # returned. These are the 'RSR', 'LSL', 'RSL' and 'LSR'. When a tangent is 'None'
@@ -97,10 +98,10 @@ def CSC_tangents(start, goal, min_bend_rad, spacing, min_straight_length):
             t = tangents((cs[0], cs[1], min_bend_rad, d[0]),
                          (cg[0], cg[1], min_bend_rad, d[1]))
             if t is not None and dist(t[0], t[1]) > min_straight_length:
-                tangents.append(tt)
+                tangents.append(t)
     
 def CSCSC_tangents(start, goal, min_bend_rad, spacing, min_straight_length):
-    tangents = []
+    ts = []
     d = dist(start, goal)
     # the mid and end circles must always be of minimum bend radius
     C2_o = min_straight_length

@@ -224,16 +224,17 @@ def CSCSC_routes(start, goal, min_bend_rad, min_straight_length):
         cg = make_circle(goal, min_bend_rad, CSCSC[2])
         # get the heading from cs to cg
         if cg.centre.y == cs.centre.y:
-            heading_cs_cg = 0
+            heading_cs_cg = pi / 2
         else:
-            heading_cs_cg = atan((cg.centre.x-cs.centre.x)/(cg.centre.y-cs.centre.y))
+            heading_cs_cg = atan((cg.centre.x-cs.centre.x)/(cg.centre.y-cs.centre.y)) + pi / 2 # -90 to 270 deg
         d = dist(cs.centre, cg.centre)
         # get the angle between vector cs_cg and vector cs_cm
         heading_start_mid = acos((C1**2 + d**2 - C2**2) / (2 * C1 * d))
-        if CSCSC[1] == 'r':
-            heading_start_mid *= -1
         # get the heading from cs to cm
-        heading_cs_cm = heading_cs_cg + heading_start_mid
+        if CSCSC[1] == 'r':
+            heading_cs_cm = heading_cs_cg - heading_start_mid
+        else:
+            heading_cs_cm = heading_cs_cg + heading_start_mid
         # make a point at the mid circle centre
         mp = Point(cs.centre.x + C1*sin(heading_cs_cm), cs.centre.y + C1*cos(heading_cs_cm))
         cm = Circle(mp, min_bend_rad, CSCSC[1])
@@ -350,18 +351,18 @@ if __name__ == '__main__':
     import random
     import matplotlib.pyplot as plt
 
-    # bend_rads = [2, 4, 6, 8, 10]
+    bend_rads = [2, 4, 6, 8, 10]
 
-    # start_type = random.choice(['line', 'arc'])
-    # if start_type == 'line':
-    #     start = LinePoint(random.randint(0,100), random.randint(0,100), random.uniform(0, 2*pi))
-    # else:
-    #     start = ArcPoint(random.randint(0,100), random.randint(0,100), random.uniform(0, 2*pi), random.choice(bend_rads), random.choice(['l', 'r']))
+    start_type = random.choice(['line', 'arc'])
+    if start_type == 'line':
+        start = LinePoint(random.randint(0,100), random.randint(0,100), random.uniform(0, 2*pi))
+    else:
+        start = ArcPoint(random.randint(0,100), random.randint(0,100), random.uniform(0, 2*pi), random.choice(bend_rads), random.choice(['l', 'r']))
 
-    # goal = LinePoint(random.randint(0,100), random.randint(0,100), random.uniform(0, 2*pi))
+    goal = LinePoint(random.randint(0,100), random.randint(0,100), random.uniform(0, 2*pi))
 
-    start = LinePoint(50, 50, 0)
-    goal = LinePoint(70, 50, pi)
+    # start = LinePoint(50, 50, 0)
+    # goal = LinePoint(70, 50, pi)
 
     paths = dubins_paths(start, goal, 5, 30, 0.1)
 

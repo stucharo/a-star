@@ -6,11 +6,11 @@ from scipy.interpolate import griddata
 from queue import PriorityQueue
 import matplotlib.pyplot as plt
 
-from dubins import dubins_routes
+from dubins import dubins_routes, Point
 
 spacing = 1
 bend_radius = [5]
-heading_tol = 3 * pi / 180
+theta_tol = 3 * pi / 180
 
 class Grid:
     def __init__(self, eastings, northings, costs):
@@ -30,7 +30,7 @@ class Grid:
         n = []
         angles = [spacing / r for r in bend_radius]
         angles.extend([-1 * a for a in angles])
-        [n.append(pt.bend_pt(self, theta)) for theta in angles]
+        [n.append(pt.bend_pt(self, radius)) for radius in angles]
         # and single straight point
         n.append(pt.straight_pt(self, spacing))
 
@@ -50,8 +50,8 @@ class Grid:
         return cost
     
     def heuristic_cost(self, p, goal):
-        start = (p.x, p.y, p.heading)
-        end = (goal.x, goal.y, goal.heading)
+        start = (p.x, p.y, p.theta)
+        end = (goal.x, goal.y, goal.theta)
         r = dubins_routes(start, end, min(bend_radius), spacing)
         r.sort(key=lambda x: x[0])
         for p in r:
@@ -74,7 +74,7 @@ def myround(num, div):
            return div * whole
 
 
-class Point:
+class RoutePoint(Point):
     """ Points are basically nodes in a linked list so we need to keep
     track of previous and subsequent Points. Each point can only have 1
     previous node (lying on the cheapest path to that point) but while
@@ -83,42 +83,42 @@ class Point:
     def __init__(self, x, y):
         self.x = x
         self.y = y
+        self.radius = 0
         self.theta = 0
-        self.heading = 0
         self.cost = 0
         self.previous = None
     
-    def bend_pt(self, graph, theta=None):
-        if theta is None:
-            new_heading = self.heading + self.theta
+    def bend_pt(self, graph, radius=None):
+        if radius is None:
+            new_theta = self.theta + self.radius
         else:
-            new_heading = self.heading + theta
-        new_x = self.x + spacing * sin(new_heading)
-        new_y = self.y + spacing * cos(new_heading)
+            new_theta = self.theta + radius
+        new_x = self.x + spacing * sin(new_theta)
+        new_y = self.y + spacing * cos(new_theta)
         p = Point(new_x, new_y)
-        p.theta = self.theta
-        p.heading = new_heading
+        p.radius = self.radius
+        p.theta = new_theta
         p.previous = self
         p.cost = self.cost + graph.cost(self, p)
         return p
 
     def straight_pt(self, graph, dist):
-        new_x = self.x + dist * sin(self.heading)
-        new_y = self.y + dist * cos(self.heading)
+        new_x = self.x + dist * sin(self.theta)
+        new_y = self.y + dist * cos(self.theta)
         p = Point(new_x, new_y)
-        p.theta = 0
-        p.heading = self.heading
+        p.radius = 0
+        p.theta = self.theta
         p.previous = self
         p.cost = self.cost + graph.cost(self, p)
         return p
 
     def __eq__(self, p):
-        return dist(self, p) < 1*spacing and abs(self.heading - p.heading) < heading_tol
+        return dist(self, p) < 1*spacing and abs(self.theta - p.theta) < theta_tol
 
 def plot_graph(start, goal, graph, path_ends):
     fig, ax = plt.subplots()
-    ax.arrow(start.x, start.y, 5*sin(start.heading), 5*cos(start.heading), head_width=0.5, head_length=1)
-    ax.arrow(goal.x, goal.y, 5*sin(goal.heading), 5*cos(goal.heading), head_width=0.5, head_length=1)
+    ax.arrow(start.x, start.y, 5*sin(start.theta), 5*cos(start.theta), head_width=0.5, head_length=1)
+    ax.arrow(goal.x, goal.y, 5*sin(goal.theta), 5*cos(goal.theta), head_width=0.5, head_length=1)
     for e in path_ends:
         p = e[2]
         pts = [(p.x, p.y)]
@@ -165,14 +165,14 @@ Z = np.random.uniform(0,100, size=X.shape)
 graph = Grid(X, Y, Z)
 
 start = Point(2, 2)
-start.heading = 0
+start.theta = 0
 goal = Point(15, 15)
-goal.heading = pi/2
+goal.theta = pi/2
 
 pt = a_star_pipe(graph, start, goal)
 fig, ax = plt.subplots()
-ax.arrow(start.x, start.y, 5*sin(start.heading), 5*cos(start.heading), head_width=0.5, head_length=1)
-ax.arrow(goal.x, goal.y, 5*sin(goal.heading), 5*cos(goal.heading), head_width=0.5, head_length=1)
+ax.arrow(start.x, start.y, 5*sin(start.theta), 5*cos(start.theta), head_width=0.5, head_length=1)
+ax.arrow(goal.x, goal.y, 5*sin(goal.theta), 5*cos(goal.theta), head_width=0.5, head_length=1)
 pts = [(pt.x, pt.y)]
 while pt.previous is not None:
     pts.append((pt.previous.x, pt.previous.y))

@@ -7,6 +7,9 @@ class Point:
         self.x = x
         self.y = y
 
+    def __repr__(self):
+        return f"Point - x: {self.x}, y: {self.y}"
+
 class LinePoint(Point):
 
     def __init__(self, x, y, heading):
@@ -17,7 +20,7 @@ class LinePoint(Point):
         return self.__repr__()
     
     def __repr__(self):
-        return f"x: {self.x:.2f}, y: {self.y:.2f}, heading: {self.heading:.2f}"
+        return f"LinePoint - x: {self.x:.2f}, y: {self.y:.2f}, heading: {self.heading:.2f}"
     
 class ArcPoint(LinePoint):
 
@@ -33,14 +36,14 @@ class ArcPoint(LinePoint):
         return self.__repr__()
 
     def __repr__(self):
-        return f"x: {self.x:.2f}, y: {self.y:.2f}, heading: {self.heading:.2f}, radius: {self.radius:.2f}, direction: {self.direction:}"
+        return f"ArcPoint - x: {self.x:.2f}, y: {self.y:.2f}, heading: {self.heading:.2f}, radius: {self.radius:.2f}, direction: {self.direction:}"
 
 class Tangent:
 
     def __init__(self, p1, p2):
         self.p1 = p1
         self.p2 = p2
-        if self.p1.heading == self.p2.heading:
+        if p1.heading == p2.heading:
             self.heading = self.p1.heading
         else:
             raise ValueError('Both points on tangent must be parallel.')
@@ -54,6 +57,9 @@ class Circle:
             self.direction = direction.lower()
         else:
             raise ValueError("direction must be 'l' or 'r'.")
+    
+    def __repr__(self):
+        return f"Circle - centre: {self.centre}, radius: {self.radius}, direction: {self.direction}"
 
 class Arc:
 
@@ -63,10 +69,15 @@ class Arc:
         self.end = end
     
     def length(self):
-        d_heading = self.end.heading - self.start.heading
-        if d_heading < 0:
-            d_heading += 2*pi
-        return 2 * self.circle.radius * d_heading / (2 * pi)
+        if self.circle.direction == 'l':
+            d_heading = self.start.heading - self.end.heading
+            if self.start.heading < self.end.heading:
+                d_heading += 2 * pi
+        else:
+            d_heading = self.end.heading - self.start.heading
+            if self.end.heading < self.start.heading:
+                d_heading += 2 * pi
+        return self.circle.radius * d_heading
     
     def points(self, spacing, leftover=0):
         d_heading = self.end.heading - self.start.heading
@@ -76,18 +87,21 @@ class Arc:
                 d_heading += 2 * pi
             arc_start_heading = self.start.heading - pi/2
             arc_headings = np.arange(arc_start_heading, arc_start_heading + d_heading, heading_inc)
-            pt_headings = arc_headings - pi/2
+            pt_headings = arc_headings + pi/2
         else:
             if d_heading > 0:
                 d_heading -= 2 * pi
             arc_start_heading = self.start.heading + pi/2
-            arc_headings = np.arange(arc_start_heading, arc_start_heading + d_heading, heading_inc)
-            pt_headings = arc_headings + pi/2
+            arc_headings = np.arange(arc_start_heading, arc_start_heading + d_heading, -1*heading_inc)
+            pt_headings = arc_headings - pi/2
         xs = self.circle.centre.x + self.circle.radius * np.sin(arc_headings)
         ys = self.circle.centre.y + self.circle.radius * np.cos(arc_headings)
         pts = [ArcPoint(x, y, heading, self.circle.radius, self.circle.direction) 
                for x, y, heading in np.stack((xs, ys, pt_headings), axis=-1)]
         return pts
+
+    def __repr__(self):
+        return f"Arc - start: {self.start}, end: {self.end}, centre: {self.circle.centre}"
 
 def dist(a, b):
     return ((b.x - a.x)**2 + (b.y - a.y)**2)**0.5
@@ -117,21 +131,21 @@ def dubins_paths(start, goal, min_bend_radius, min_straight_length, spacing):
     the minimum straight length reduces to zero we will return a
     conventional CCC path.
     """
-    routes = CSC_routes(start, goal, min_bend_radius, spacing, min_straight_length)
+    routes = CSC_routes(start, goal, min_bend_radius, min_straight_length)
     if len(routes) == 0:
         # We have no valid CSC paths because they all violate our minimum straight length
         # constraint. Now we need to compute CSCSC paths. We have far more options here
         # because we have an extra circle. Potential routes are 'RSRSR', 'RSRSL', 'RSLSR',
         # 'RSLSL', 'LSRSR', 'LSRSL', 'LSLSR' and 'LSLSL'. The direction of the mid circle
         # determines it's location between the start and goal.
-        routes = CSCSC_routes(start, goal, min_bend_radius, spacing, min_straight_length)
+        routes = CSCSC_routes(start, goal, min_bend_radius, min_straight_length)
     if len(routes) == 0:
         raise Exception('No valid paths to goal calculated.')
     
     paths = [generate_path(route, spacing) for route in routes]
     return paths
 
-def CSC_routes(start, goal, min_bend_rad, spacing, min_straight_length):
+def CSC_routes(start, goal, min_bend_rad, min_straight_length):
     """ Compute all options for Circle-Straight-Circle routes. Each
     route is returned as a list of Arc objects. These Arcs can be
     joined up by their end/start points to generate a path. A list of
@@ -160,7 +174,7 @@ def CSC_routes(start, goal, min_bend_rad, spacing, min_straight_length):
                 routes.append([Arc(cs, start, t.p1), Arc(cg, t.p2, goal)])
     return routes
     
-def CSCSC_routes(start, goal, min_bend_rad, spacing, min_straight_length):
+def CSCSC_routes(start, goal, min_bend_rad, min_straight_length):
     """ Compute all Circle-Straight-Circle-Straight-Circle routes.
     These should only be required when we have no CSC routes i.e. when
     we are close to the goal and a CSC route would violate the minimum
@@ -179,7 +193,7 @@ def CSCSC_routes(start, goal, min_bend_rad, spacing, min_straight_length):
     if type(start) is ArcPoint:
         # we're on an arc already so we must maintain the bend radius through the first
         # arc
-        C1_o = (min_straight_length**2 + (start.radius - min_bend_rad)**2)**0.5
+        C1_o = (min_straight_length**2 - (start.radius - min_bend_rad)**2)**0.5
         C1_i = (min_straight_length**2 + (start.radius + min_bend_rad)**2)**0.5
     else:
         # we are on a straight so the start circle must also be of minimum bend radius
@@ -209,10 +223,13 @@ def CSCSC_routes(start, goal, min_bend_rad, spacing, min_straight_length):
         # get the centre of the goal circle:
         cg = make_circle(goal, min_bend_rad, CSCSC[2])
         # get the heading from cs to cg
-        heading_cs_cg = atan((cg.centre.x-cs.centre.x)/(cg.centre.y-cs.centre.y))
+        if cg.centre.y == cs.centre.y:
+            heading_cs_cg = 0
+        else:
+            heading_cs_cg = atan((cg.centre.x-cs.centre.x)/(cg.centre.y-cs.centre.y))
         d = dist(cs.centre, cg.centre)
         # get the angle between vector cs_cg and vector cs_cm
-        heading_start_mid = (C1**2 + d**2 - C2**2) / (2 * C1 * d)
+        heading_start_mid = acos((C1**2 + d**2 - C2**2) / (2 * C1 * d))
         if CSCSC[1] == 'r':
             heading_start_mid *= -1
         # get the heading from cs to cm
@@ -235,10 +252,10 @@ def make_circle(pt, radius=None, direction=None):
         d = pt.direction
     else:
         d = direction
-    fd = {'l': 1,
-          'r': -1}
-    x = pt.x - r * sin(pt.heading + fd[d] * pi/2)
-    y = pt.y - r * cos(pt.heading + fd[d] * pi/2)
+    fd = {'l': -1,
+          'r': 1}
+    x = pt.x + r * sin(pt.heading + fd[d] * pi/2)
+    y = pt.y + r * cos(pt.heading + fd[d] * pi/2)
     return Circle(Point(x, y), r, d)
 
 def tangent(c1, c2):
@@ -301,14 +318,17 @@ def generate_path(arcs, spacing):
     pts = []
     for an in range(len(arcs) -1):
         path_length += arcs[an].length()
-        pts.append(arcs[an].points(spacing, leftover))
-        leftover += path_length - len(pts) * spacing
+        pts.extend(arcs[an].points(spacing, leftover))
+        leftover += path_length - (len(pts)-1) * spacing
         path_length += dist(arcs[an].end, arcs[an+1].start)
-        pts.append(straight_points(arcs[an].end, arcs[an+1].start, spacing, leftover))
+        pts.extend(straight_points(arcs[an].end, arcs[an+1].start, spacing, leftover))
         leftover += path_length - len(pts) * spacing
     path_length += arcs[an+1].length()
-    pts.append(arcs[an+1].points(spacing, leftover))
+    pts.extend(arcs[an+1].points(spacing, leftover))
     return path_length, pts
+
+def round_down(num, divisor):
+    return num - (num%divisor)
 
 def straight_points(start, end, spacing, leftover=0):
     start_x = start.x
@@ -317,9 +337,11 @@ def straight_points(start, end, spacing, leftover=0):
         leftover_l = spacing - leftover
         start_x += leftover_l * sin(start.heading)
         start_y += leftover_l * cos(start.heading)
-    xs = np.arange(start_x, end.x, spacing * sin(start.heading))
-    ys = np.arange(start_y, end.y, spacing * cos(start.heading))
-    print(xs.shape, ys.shape)
+    dx = round_down(end.x - start_x, spacing)
+    dy = round_down(end.y - start_y, spacing)
+    p = int(dist(Point(start_x, start_y), end) / spacing)
+    xs = np.linspace(start_x, start_x + dx, p)
+    ys = np.linspace(start_y, start_y + dy, p)
     pts = [LinePoint(x, y, start.heading) for x, y in np.stack((xs, ys), axis=-1)]
     return pts
 
@@ -328,28 +350,28 @@ if __name__ == '__main__':
     import random
     import matplotlib.pyplot as plt
 
-    bend_rads = [2, 4, 6, 8, 10]
+    # bend_rads = [2, 4, 6, 8, 10]
 
-    start_type = random.choice(['line', 'arc'])
-    if start_type == 'line':
-        start = LinePoint(random.randint(0,100), random.randint(0,100), random.uniform(0, 2*pi))
-    else:
-        start = ArcPoint(random.randint(0,100), random.randint(0,100), random.uniform(0, 2*pi), random.choice(bend_rads), random.choice(['l', 'r']))
+    # start_type = random.choice(['line', 'arc'])
+    # if start_type == 'line':
+    #     start = LinePoint(random.randint(0,100), random.randint(0,100), random.uniform(0, 2*pi))
+    # else:
+    #     start = ArcPoint(random.randint(0,100), random.randint(0,100), random.uniform(0, 2*pi), random.choice(bend_rads), random.choice(['l', 'r']))
 
-    goal = LinePoint(random.randint(0,100), random.randint(0,100), random.uniform(0, 2*pi))
+    # goal = LinePoint(random.randint(0,100), random.randint(0,100), random.uniform(0, 2*pi))
 
-    print(start)
-    print(goal)
+    start = LinePoint(50, 50, 0)
+    goal = LinePoint(70, 50, pi)
 
-    p1 = (random.randint(0,100), random.randint(0,100), random.uniform(0, 2*pi))
-    p2 = (random.randint(0,100), random.randint(0,100), random.uniform(0, 2*pi))
+    paths = dubins_paths(start, goal, 5, 30, 0.1)
 
-    paths = dubins_paths(start, goal, min(bend_rads), random.choice([10, 20, 30, 40]), 0.1)
+    
     fig, ax = plt.subplots()
     ax.arrow(start.x,start.y,5*sin(start.heading), 5*cos(start.heading), head_width=0.5, head_length=1)
     ax.arrow(goal.x, goal.y, 5*sin(goal.heading), 5*cos(goal.heading), head_width=0.5, head_length=1)
-    for p in paths:
-        pts = np.array(p[1])
+    for path in paths:
+        p = [(p.x, p.y) for p in path[1]]
+        pts = np.array(p)
         x = pts[:,0]
         y = pts[:,1]
         ax.plot(x, y)

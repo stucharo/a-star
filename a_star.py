@@ -73,6 +73,7 @@ def myround(num, div):
    else:
            return div * whole
 
+
 class Point:
     """ Points are basically nodes in a linked list so we need to keep
     track of previous and subsequent Points. Each point can only have 1

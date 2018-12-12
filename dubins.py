@@ -1,11 +1,37 @@
 from math import pi, sin, cos, atan2, atan, acos
 import numpy as np
-from a_star import Point
+
+class Point:
+
+    def __init__(self, x, y, theta=None):
+        self.x = x
+        self.y = y
+        self.theta = theta
+
+class Tangent:
+
+    def __init__(self, p1, p2):
+        self.p1 = p1
+        self.p2 = p2
+        if self.p1.theta == self.p2.theta:
+            self.theta = self.p1.theta
+        else:
+            raise ValueError('Both points on tangent must be parallel.')
+
+class Circle:
+
+    def __init__(self, centre, radius, direction):
+        self.centre = pc
+        self.radius = radius
+        if direction.lower() in ['l', 'r']:
+            self.direction = direction.lower()
+        else:
+            raise ValueError("direction must be 'l' or 'r'.")
 
 def dist(a, b):
-    return ((b[1] - a[1])**2 + (b[0] - a[0])**2)**0.5
+    return ((b.x - a.x)**2 + (b.y - a.y)**2)**0.5
 
-def dubins_routes(start, goal, min_bend_rad, spacing):
+def dubins_routes(start, goal, min_bend_radius, min_straight_length, spacing):
     paths = get_dubins_paths(start, goal, min_bend_radius, min_straight_length, spacing)
     routes = [get_dubins_route_points(path, spacing) for path in paths]
     return routes
@@ -69,46 +95,46 @@ def CSC_tangents(start, goal, min_bend_rad, spacing, min_straight_length):
         # continue it to maintain our constant bend radius criteria). This limits us to
         # 2 possible paths: 'LSL' and 'LSR'.
         rs = spacing / abs(start.theta)
-        cs = circle_centre(start, rs, 'l')
+        cs = make_circle(start, rs, 'l')
         for d in ['l', 'r']:
-            cg = circle_centre(goal, min_bend_rad, d)
-            t = tangents((cs[0], cs[1], rs, 'l'),
-                         (cg[0], cg[1], min_bend_rad, d))
-            if t is not None and dist(t[0], t[1]) > min_straight_length:
+            cg = make_circle(goal, min_bend_rad, d)
+            t = tangent(cs, cg)
+            if t is not None and dist(t.p1, t.p2) > min_straight_length:
                 ts.append(t)
     elif start.theta > 0:
         # we are already on a bend and we know the start direction is right (and we must
         # continue it to maintain our constant bend radius criteria). This limits us to
         # 2 possible paths: 'RSL' and 'RSR'.
         rs = spacing / abs(start.theta)
-        cs = circle_centre(start, rs, 'r')
+        cs = make_circle(start, rs, 'r')
         for d in ['l', 'r']:
-            cg = circle_centre(goal, min_bend_rad, d)
-            t = tangents((cs[0], cs[1], rs, 'r'),
-                         (cg[0], cg[1], min_bend_rad, d))
-            if t is not None and dist(t[0], t[1]) > min_straight_length:
+            cg = make_circle(goal, min_bend_rad, d)
+            t = tangent(cs, cg)
+            if t is not None and dist(t.p1, t.p2) > min_straight_length:
                 ts.append(t)
     else:
         # we are on a straight section so we should expect up to 4 tangents to be
         # returned. These are the 'RSR', 'LSL', 'RSL' and 'LSR'. When a tangent is 'None'
         # it can be discarded as another CCC path would be shorter anyway.
         for d in [('r', 'r'), ('l', 'l'), ('r', 'l'), ('l', 'r')]:
-            cs = circle_centre(start, min_bend_rad, d[0])
-            cg = circle_centre(goal, min_bend_rad, d[1])
-            t = tangents((cs[0], cs[1], min_bend_rad, d[0]),
-                         (cg[0], cg[1], min_bend_rad, d[1]))
-            if t is not None and dist(t[0], t[1]) > min_straight_length:
-                tangents.append(t)
+            cs = make_circle(start, min_bend_rad, d[0])
+            cg = make_circle(goal, min_bend_rad, d[1])
+            t = tangent(cs, cg)
+            if t is not None and dist(t.p1, t.p2) > min_straight_length:
+                ts.append(t)
+    return ts
     
 def CSCSC_tangents(start, goal, min_bend_rad, spacing, min_straight_length):
     ts = []
-    d = dist(start, goal)
-    # the mid and end circles must always be of minimum bend radius
+    # Find the distances C1 (from the centre of the start circle to the centre of the mid
+    # circle) and C2 (from the centre of mid circle to the centre of the goal circle) for
+    # the inner and outer tangents the mid and goal circles must always be of minimum bend
+    # radius.
     C2_o = min_straight_length
     C2_i = (min_straight_length**2 + (2 * min_bend_rad)**2)**0.5
+    # but the start circle radius is based on the radius of the start point
     if start.theta == 0:
-        # we are on a straight so the start and mid circles must also be of minimum bend
-        # radius
+        # we are on a straight so the start circle must also be of minimum bend radius
         C1_o = C2_o
         C1_i = C2_i
     else:
@@ -122,13 +148,15 @@ def CSCSC_tangents(start, goal, min_bend_rad, spacing, min_straight_length):
                    ('r', 'r', 'l'), ('r', 'r', 'r'), ('r', 'l', 'l'), ('r', 'l', 'r')]
     
     # limit the possible paths if we're already on a curve
-    if start.theta > 0:
-        CSCSC_path = [p for p in CSCSC_paths if p[0] == 'l']
-    if start.theta < 0: 
-        CSCSC_path = [p for p in CSCSC_paths if p[0] == 'r']
+    if start.theta < 0:
+        # we have to keep turning left
+        CSCSC_paths = [p for p in CSCSC_paths if p[0] == 'l']
+    if start.theta > 0: 
+        # we have to keep turning right
+        CSCSC_paths = [p for p in CSCSC_paths if p[0] == 'r']
 
-    for CSCSC in CSC_paths:
-        # now construct the 
+    for CSCSC in CSCSC_paths:
+        # find the distance between circle centres for this case
         if CSCSC[0] == CSCSC[1]:
             C1 = C1_o
         else:
@@ -137,34 +165,55 @@ def CSCSC_tangents(start, goal, min_bend_rad, spacing, min_straight_length):
             C2 = C2_o
         else:
             C2 = C2_i
-        theta = C1**2 + d**2 - C2**2 / 2 / C1 / d
+        # get the centre of the start circle
+        if start.theta == 0:
+            rs = min_bend_rad
+        else:
+            rs = spacing / abs(start.theta)
+        cs = make_circle(start, rs, CSCSC[0])
+        # get the centre of the goal circle:
+        cg = make_circle(goal, min_bend_rad, CSCSC[2])
+        # get the heading from cs to cg
+        theta_cs_cg = atan((cg.centre.x-cs.centre.x)/(cg.centre.y-cs.centre.y))
+        d = dist(cs.centre, cg.centre)
+        # get the angle between vector cs_cg and vector cs_cm
+        theta_start_mid = (C1**2 + d**2 - C2**2) / (2 * C1 * d)
         if CSCSC[1] == 'r':
-            theta *= -1
-        pm = Point()
+            theta_start_mid *= -1
+        # get the heading from cs to cm
+        theta_cs_cm = theta_cs_cg + theta_start_mid
+        # make a point at the mid circle centre
+        mp = Point(cs.centre.x + C1*sin(theta_cs_cm), cs.centre.y + C1*cos(theta_cs_cm))
+        cm = Circle(mp, min_bend_rad, CSCSC[1])
+        # get tangents
+        t1 = tangent(cs, cm)
+        t2 = tangent(cm, cg)
+        ts.append((t1, t2))
+    return ts
 
 def CSC_path(start, start_dir, goal, goal_dir, rad):
-    cs = circle_centre(start, rad, start_dir)
-    cg = circle_centre(goal, rad, goal_dir)
-    ts = tangents((cs[0], cs[1], rad, start_dir), (cg[0], cg[1], rad, goal_dir))
+    cs = make_circle(start, rad, start_dir)
+    cg = make_circle(goal, rad, goal_dir)
+    ts = tangent(cs, cg)
     if ts is None:
         return ts
     else:
         return [(start, ts[0], cs, start_dir), (ts[1], goal, cg, goal_dir)]
 
-def circle_centre(pt, rad, dir):
+def make_circle(pt, rad, dir):
     d = {'l': 1,
          'r': -1}
     x = pt[0] - rad * sin(pt[2] + d[dir] * pi/2)
     y = pt[1] - rad * cos(pt[2] + d[dir] * pi/2)
-    return x, y
+    return Circle(Point(x, y), rad, dir)
 
-def tangents(p1, p2):
-    """ Returns list of outer and inner tangents (in that order).
-    Tangents are returned as [x1, y1, x2, y2]
+def tangent(c1, c2):
+    """ Returns the Tangent to c1 and c2, travelling in the appropriate directions.
+    Tangents are returned as Tangent objects
     Modified version of Java algorithm:
     https://en.wikibooks.org/wiki/Algorithm_Implementation/Geometry/Tangents_between_two_circles
 
-    p1 and p2 are tuples describing the circles and tangent required:
+    c1 and c2 are tuples describing the circles and tangent required:
         (cx, cy, rad(>0), d(['l'||'r']))
         cx: float
             x coordinate of circle centre
@@ -208,7 +257,7 @@ def tangents(p1, p2):
             t = 3 * pi / 2
     else:
         t = pi / 2 - atan2(dy, dx)
-    return ((x1, y1, t), (x2, y2, t))
+    return Tangent(Point(x1, y1, t), Point(x2, y2, t))
 
 def get_dubins_route_points(path, spacing):
     """ Dubins routes are defined by the key locations on each circle. There
@@ -302,8 +351,8 @@ def arc_theta(p1, p2, d):
 
 def CCC_path(start, goal, dir, rad):
     # get centre of Cstart
-    Cs = circle_centre(start, rad, dir)
-    Cg = circle_centre(goal, rad, dir)
+    Cs = make_circle(start, rad, dir)
+    Cg = make_circle(goal, rad, dir)
     dx = Cg[0] - Cs[0]
     dy = Cg[1] - Cs[1]
     d = dist(Cs, Cg)

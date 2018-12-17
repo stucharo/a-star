@@ -1,43 +1,8 @@
-from math import pi, sin, cos, atan2, atan, acos
+from math import pi, sin, cos, atan, acos, atan2
+
 import numpy as np
 
-class Point:
-
-    def __init__(self, x, y):
-        self.x = x
-        self.y = y
-
-    def __repr__(self):
-        return f"Point - x: {self.x}, y: {self.y}"
-
-class LinePoint(Point):
-
-    def __init__(self, x, y, heading):
-        super().__init__(x, y)
-        self.heading = heading
-    
-    def __str__(self):
-        return self.__repr__()
-    
-    def __repr__(self):
-        return f"LinePoint - x: {self.x:.2f}, y: {self.y:.2f}, heading: {self.heading:.2f}"
-    
-class ArcPoint(LinePoint):
-
-    def __init__(self, x, y, heading, radius, direction):
-        super().__init__(x, y, heading)
-        self.radius = radius
-        if direction in ['l', 'r']:
-            self.direction = direction
-        else:
-            raise ValueError("direction must be 'l' or 'r'.")
-    
-    def __str__(self):
-        return self.__repr__()
-
-    def __repr__(self):
-        return f"ArcPoint - x: {self.x:.2f}, y: {self.y:.2f}, heading: {self.heading:.2f}, radius: {self.radius:.2f}, direction: {self.direction:}"
-
+from a_star import Point
 class Tangent:
 
     def __init__(self, p1, p2):
@@ -47,7 +12,6 @@ class Tangent:
             self.heading = self.p1.heading
         else:
             raise ValueError('Both points on tangent must be parallel.')
-
 class Circle:
 
     def __init__(self, centre, radius, direction):
@@ -96,41 +60,36 @@ class Arc:
             pt_headings = arc_headings - pi/2
         xs = self.circle.centre.x + self.circle.radius * np.sin(arc_headings)
         ys = self.circle.centre.y + self.circle.radius * np.cos(arc_headings)
-        pts = [ArcPoint(x, y, heading, self.circle.radius, self.circle.direction) 
-               for x, y, heading in np.stack((xs, ys, pt_headings), axis=-1)]
+        pts = [Point(x, y, heading=h, radius=self.circle.radius, direction=self.circle.direction) 
+               for x, y, h in np.stack((xs, ys, pt_headings), axis=-1)]
         return pts
 
     def __repr__(self):
         return f"Arc - start: {self.start}, end: {self.end}, centre: {self.circle.centre}"
 
-def dist(a, b):
-    return ((b.x - a.x)**2 + (b.y - a.y)**2)**0.5
+def paths(start, goal, min_bend_radius, min_straight_length, heading_tol, spacing):
+    """ Find the shortest path to the goal from a start point
+    respecting the minimum bend radius and minimum straight length.
+    Points are returned along the path at the spacing requested.
 
-def dubins_paths(start, goal, min_bend_radius, min_straight_length, spacing):
-    """ These will only be true Dubins routes in the cases where the
-    start is straight and the tangent length exceeds the minimum straight
-    length.
-    
-    The shortest path to the goal must satisfy our regular route 
-    constraints or it will return artificially cheap paths. These are:
-        1. Minimum straight length;
-        2. Fixed radius bends;
-        3. Minimum bends radius.
+    Paths assessed are increasingly complex until a valid path is
+    found. Increased complexity general equates to more bends. Paths
+    are assessed in the following order:
 
-    If we are currently on a bend then we must either:
-        a. Continue at that bend radius to a tangent point;
-        b. Continue at the same heading for the minium straight
-           length.
-
-    If we are on a straight section then our shortest path must be to
-    turn immediately at the minimum bend radius.
-
-    When we are close to the goal i.e. when a tangent length is less
-    than the minimum straight length, we must add in a third circle
-    the minimum straight length away of the minimum bend radius. When
-    the minimum straight length reduces to zero we will return a
-    conventional CCC path.
+        1.  Straight line to goal of minimum straight length;
+        2.  Straight-Curve-Straight respecting minimum straight length;
+        3.  Straight-Curve-Straight-Curve-Straight
     """
+    p = []
+    p.extend(S_route(start, goal, min_straight_length, heading_tol, spacing))
+    if len(p) > 0:
+        # we have a straight path
+        return p
+    d = dist(start, goal)
+    sl = Point(start.x+d*sin(start.heading), start.y+d*cos(start.heading), heading=start.heading)
+    if sl == goal:
+        # we can get to the end with a straight line
+        return [d, straight_points(start, goal, spacing)]
     routes = CSC_routes(start, goal, min_bend_radius, min_straight_length)
     if len(routes) == 0:
         # We have no valid CSC paths because they all violate our minimum straight length
@@ -145,6 +104,48 @@ def dubins_paths(start, goal, min_bend_radius, min_straight_length, spacing):
     paths = [generate_path(route, spacing) for route in routes]
     return paths
 
+def S_route(start, goal, min_straight_length, heading_tol, spacing):
+    # if they're not even the same heading...
+    if not abs(start.heading - goal.heading) < heading_tol:
+        # bail out
+        return []
+    # we check if the start ends up on goal if we move it the distance between them
+    d = dist(start, goal)
+    # if we're on a bend and not a minimum straight length away
+    if start.radius is not None and d < min_straight_length:
+        return []
+    # no need to add heading since we've already checked that
+    p = Point(start.x+d*sin(start.heading), start.y+d*cos(start.heading))
+    # if they're not in the same place
+    if not p == goal:
+        # bail out again
+        return []
+    return straight_points(start, goal, spacing)
+
+def SCS_route(start, goal, min_straight_length, min_bend_radius, heading_tol, spacing):
+    """ THe SCS path is a curve fitted between the start and goal
+    points, after both points have been adjusted for the minimum
+    straight distance.
+    
+    For a Straight-Curve-Straight path, the angle between start and
+    goal headings must be less than 180 deg or the path will cross over
+    itself (not allowed!). This means we need to know the direction to
+    turn and the angle .
+    """
+    
+    # we should be using more vectors for this pathfinding stuff
+    delta_heading = goal.heading - start.heading
+    if delta_heading > pi:
+        delta_heading -= 2*pi
+    elif delta_heading <= -pi:
+        delta_heading += 2*pi
+    # adjust the end point for the minimum straight length
+    end_tangent_x = goal.x + min_straight_length * sin(goal.heading + pi)
+    end_tangent_y = goal.x + min_straight_length * sin(goal.heading + pi)
+    end_tangent = Point(end_tangent_x, end_tangent_y, heading=goal.heading)
+
+    return end_tangent.heading
+
 def CSC_routes(start, goal, min_bend_rad, min_straight_length):
     """ Compute all options for Circle-Straight-Circle routes. Each
     route is returned as a list of Arc objects. These Arcs can be
@@ -152,7 +153,7 @@ def CSC_routes(start, goal, min_bend_rad, min_straight_length):
     routes is returned from this function.
     """
     routes = []
-    if type(start) is ArcPoint:
+    if start.radius is not None:
         # we are already on a bend and we know the direction (and we must continue it to
         # maintain our constant bend radius criteria). This limits us to 2 possible paths:
         # 'xSL' and 'xSR'.
@@ -190,20 +191,17 @@ def CSCSC_routes(start, goal, min_bend_rad, min_straight_length):
     C2_o = min_straight_length
     C2_i = (min_straight_length**2 + (2 * min_bend_rad)**2)**0.5
     # but the start circle radius is based on the radius of the start point
-    if type(start) is ArcPoint:
+    if start.radius is not None:
         # we're on an arc already so we must maintain the bend radius through the first
         # arc
         C1_o = (min_straight_length**2 - (start.radius - min_bend_rad)**2)**0.5
         C1_i = (min_straight_length**2 + (start.radius + min_bend_rad)**2)**0.5
+        # and we can also reduce the path options
+        CSCSC_paths = [p for p in CSCSC_paths if p[0] == start.direction]
     else:
         # we are on a straight so the start circle must also be of minimum bend radius
         C1_o = C2_o
         C1_i = C2_i
-        
-    # limit the possible paths if we're already on a curve
-    if type(start) is ArcPoint:
-        # we have to keep turning in that direction
-        CSCSC_paths = [p for p in CSCSC_paths if p[0] == start.direction]
 
     for CSCSC in CSCSC_paths:
         # find the distance between circle centres for this case
@@ -216,7 +214,7 @@ def CSCSC_routes(start, goal, min_bend_rad, min_straight_length):
         else:
             C2 = C2_i
         # get the centre of the start circle
-        if type(start) is ArcPoint:
+        if start.radius is not None:
             cs = make_circle(start)
         else:
             cs = make_circle(start, min_bend_rad, CSCSC[0])
@@ -229,7 +227,10 @@ def CSCSC_routes(start, goal, min_bend_rad, min_straight_length):
             heading_cs_cg = atan((cg.centre.x-cs.centre.x)/(cg.centre.y-cs.centre.y)) + pi / 2 # -90 to 270 deg
         d = dist(cs.centre, cg.centre)
         # get the angle between vector cs_cg and vector cs_cm
-        heading_start_mid = acos((C1**2 + d**2 - C2**2) / (2 * C1 * d))
+        if abs(C1**2 + d**2 - C2**2) < abs(2 * C1 * d):
+            heading_start_mid = acos((C1**2 + d**2 - C2**2) / (2 * C1 * d))
+        else:
+            continue
         # get the heading from cs to cm
         if CSCSC[1] == 'r':
             heading_cs_cm = heading_cs_cg - heading_start_mid
@@ -241,15 +242,16 @@ def CSCSC_routes(start, goal, min_bend_rad, min_straight_length):
         # get tangents
         t1 = tangent(cs, cm)
         t2 = tangent(cm, cg)
-        routes.append([Arc(cs, start, t1.p1), Arc(cm, t1.p2, t2.p1), Arc(cg, t2.p2, goal)])
+        if t1 is not None and t2 is not None:
+            routes.append([Arc(cs, start, t1.p1), Arc(cm, t1.p2, t2.p1), Arc(cg, t2.p2, goal)])
     return routes
 
 def make_circle(pt, radius=None, direction=None):
-    if hasattr(pt, 'radius'):
+    if pt.radius is not None:
         r = pt.radius
     else:
         r = radius
-    if hasattr(pt, 'direction'):
+    if pt.direction is not None:
         d = pt.direction
     else:
         d = direction
@@ -311,7 +313,7 @@ def tangent(c1, c2):
         t = pi / 2 - atan2(dy, dx)
     if t < 0:
         t += 2*pi
-    return Tangent(LinePoint(x1, y1, t), LinePoint(x2, y2, t))
+    return Tangent(Point(x1, y1, heading=t), Point(x2, y2, heading=t))
 
 def generate_path(arcs, spacing):
     leftover = 0
@@ -331,50 +333,27 @@ def generate_path(arcs, spacing):
 def round_down(num, divisor):
     return num - (num%divisor)
 
-def straight_points(start, end, spacing, leftover=0):
-    start_x = start.x
-    start_y = start.y
-    if leftover != 0:
+def straight_points(start, goal, spacing, leftover=0):
+    if leftover == 0:
+        s = start
+    else:
         leftover_l = spacing - leftover
-        start_x += leftover_l * sin(start.heading)
-        start_y += leftover_l * cos(start.heading)
-    dx = round_down(end.x - start_x, spacing)
-    dy = round_down(end.y - start_y, spacing)
-    p = int(dist(Point(start_x, start_y), end) / spacing)
-    xs = np.linspace(start_x, start_x + dx, p)
-    ys = np.linspace(start_y, start_y + dy, p)
-    pts = [LinePoint(x, y, start.heading) for x, y in np.stack((xs, ys), axis=-1)]
-    return pts
+        s = Point(start.x+leftover_l*sin(start.heading),
+                  start.y+leftover_l*cos(start.heading))
+    dx = spacing*sin(start.heading)
+    dy = spacing*cos(start.heading)
+    d = dist(s, goal)
+    incs = int(d/spacing)
+    xs = np.linspace(start.x, start.x+dx*incs, incs+1)
+    ys = np.linspace(start.y, start.y+dy*incs, incs+1)
+    return [Point(x, y, heading=start.heading) for x, y in np.stack((xs, ys), axis=-1)]
+
+def dist(p1, p2):
+    return ((p1.x-p2.x)**2 + (p1.y-p2.y)**2)**0.5
 
 if __name__ == '__main__':
-
-    import random
-    import matplotlib.pyplot as plt
-
-    bend_rads = [2, 4, 6, 8, 10]
-
-    start_type = random.choice(['line', 'arc'])
-    if start_type == 'line':
-        start = LinePoint(random.randint(0,100), random.randint(0,100), random.uniform(0, 2*pi))
-    else:
-        start = ArcPoint(random.randint(0,100), random.randint(0,100), random.uniform(0, 2*pi), random.choice(bend_rads), random.choice(['l', 'r']))
-
-    goal = LinePoint(random.randint(0,100), random.randint(0,100), random.uniform(0, 2*pi))
-
-    # start = LinePoint(50, 50, 0)
-    # goal = LinePoint(70, 50, pi)
-
-    paths = dubins_paths(start, goal, 5, 30, 0.1)
-
     
-    fig, ax = plt.subplots()
-    ax.arrow(start.x,start.y,5*sin(start.heading), 5*cos(start.heading), head_width=0.5, head_length=1)
-    ax.arrow(goal.x, goal.y, 5*sin(goal.heading), 5*cos(goal.heading), head_width=0.5, head_length=1)
-    for path in paths:
-        p = [(p.x, p.y) for p in path[1]]
-        pts = np.array(p)
-        x = pts[:,0]
-        y = pts[:,1]
-        ax.plot(x, y)
-    plt.axis('equal')
-    plt.show()
+    s = Point(0,0,heading=0)
+    g = Point(-10, 10, heading=5*pi/4)
+
+    print(SCS_route(s, g, 2, 1, pi/180, 1))

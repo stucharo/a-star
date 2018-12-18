@@ -31,16 +31,16 @@ def turn_dir(p1, p2):
 
 def dist2tangents(p1, p2, r):
     t_dir = turn_dir(p1, p2)
-    rp1 = rotate(p1, t_dir*pi/2)
-    rp2 = rotate(p2, t_dir*pi/2)
+    rp1 = move(p1, 0, 0, t_dir*pi/2)
+    rp2 = move(p2, 0, 0, t_dir*pi/2)
     dv = np.array([[p1.dx, -p2.dx], [p1.dy, -p2.dy]])
     lv = np.array([p2.x+r*rp2.dx-(p1.x+r*rp1.dx), p2.y+r*rp2.dy-(p1.y+r*rp1.dy)])
     return np.linalg.solve(dv, lv)
 
-def rotate(p, t):
+def move(p, dx, dy, dt):
     in_angle = atan2(p.dy, p.dx)
-    new_heading = normalize_angle(in_angle + t)
-    return Point(p.x, p.y, new_heading)
+    new_heading = normalize_angle(in_angle + dt)
+    return Point(p.x+dx, p.y+dy, new_heading)
 
 def normalize_angle(a):
     """ Maintain angle between in range -pi <= a < pi """
@@ -50,7 +50,6 @@ def normalize_angle(a):
         return a + 2*pi
     else:
         return a
-
 
 def shortest_route(s, g, min_rad, min_straight, heading_tol, location_tol, spacing):
     """ An SCS path is an SCSCS path where the straight length is 0.
@@ -68,10 +67,10 @@ def shortest_route(s, g, min_rad, min_straight, heading_tol, location_tol, spaci
     st_dir = turn_dir(st, gt)
     gt_dir = turn_dir(gt, st)
     # get the centres of both arcs
-    sc = rotate(st, st_dir*2/pi)
+    sc = move(st, 0, 0, st_dir*2/pi)
     sc.x += min_rad*sc.dx
     sc.y += min_rad*sc.dy
-    gc = rotate(gt, gt_dir*pi/2)
+    gc = move(gt, 0, 0, gt_dir*pi/2)
     gc.x += min_rad*gc.dx
     gc.y += min_rad*gc.dy
     dc = dist(sc, gc)
@@ -89,14 +88,24 @@ def path(s, g, bends=[], spacing=1):
     """
     # if we just have a straight path
     if len(bends) == 0:
-        return straight_points(s, g, spacing)
+        return straight_points(s, g, spacing)[0]
     else:
         # build up a path
+        # first straight
         p, lo = straight_points(s, bends[0][0], spacing)
-        for b in bends:
-            pts, lo = bend_points(b, spacing, lo)
+        # loop through each bend
+        for n in range(len(bends) - 1):
+            # arc
+            pts, lo = bend_points(bends[n], spacing, lo)
             p.extend(pts)
-        p.extend(straight_points(s, bends[-1][1], spacing, lo)[0])
+            # then straight
+            pts, lo = straight_points(bends[n][1], bends[n+1][0], spacing, lo)
+            p.extend(pts)
+        # last bend
+        pts, lo = bend_points(bends[-1], spacing, lo)
+        p.extend(pts)
+        # last straight
+        p.extend(straight_points(bends[-1][1], g, spacing, lo)[0])
         return p
 
 def tangent_points(sc, s_rad, st_dir, gc, g_rad, gt_dir):
@@ -120,10 +129,9 @@ def tangent_points(sc, s_rad, st_dir, gc, g_rad, gt_dir):
     return ts, te
 
 def straight_points(s, g, spacing, leftover=0):
-    if leftover != 0:
-        ds = spacing - leftover
-        s.x += ds * s.dx
-        s.y += ds * s.dy
+    ds = spacing - leftover
+    s.x += ds * s.dx
+    s.y += ds * s.dy
     d = dist(s, g)
     incs = int(d/spacing)
     lo = d - incs*spacing 
@@ -135,27 +143,47 @@ def straight_points(s, g, spacing, leftover=0):
 def bend_points(bend, spacing, leftover=0):
     bs, bg, bc, d = bend[0], bend[1], bend[2], bend[3]
     r = dist(bs, bc)
-    t = d * spacing / r
-    ts = atan2(bs.y-bc.y, bs.x-bc.x)
-    tg = atan2(bg.y-bc.y, bg.x-bc.x)
-    if leftover != 0:
-        ts = normalize_angle(ts + d * (spacing-leftover) / r)
-    if ts < 0 and t < 0 and tg > 0:
-        # we're going past -pi
-        tg = -2*pi + tg
-    elif ts > 0 and t > 0 and tg < 0:
-        # we're going past pi
-        tg = 2*pi + tg
-    tc = ts
-    return [], 0
+    # theta start is normal to bs
+    vs = move(bs, bc.x-bs.x, bc.y-bs.y, -d*pi/2)
+    vg = move(bg, bc.x-bg.x, bc.y-bg.y, -d*pi/2)
+    # move it for leftover
+    dt = d * (spacing-leftover) / r
+    vs = move(vs, 0, 0, dt)
+    # get number of whole increments
+    ts = atan2(vs.dy, vs.dx)
+    tg = atan2(vg.dy, vg.dx)
+    tt = angle_between(vs, vg, d)
+    dt = d * spacing / r
+    inc = int(tt / dt)
+    tl = np.linspace(ts, ts + inc*dt, inc+1)
+    p = [Point(bc.x+r*cos(t), bc.y+r*sin(t), t + d*pi/2) for t in tl]
+    leftover = abs(abs(tg)-abs(tl[-1])) * r
+    return p, leftover
+
+def chord_length(rad, arc_length):
+    return 2 * rad * sin(arc_length / 2 / r)
+
+def angle_between(s, g, d):
+    # dot product between [x1, y1] and [x2, y2]
+    dot = s.dx*g.dx + s.dy*g.dy   
+    # determinant   
+    det = s.dx*g.dy - s.dy*g.dx   
+    # anti-clockwise angle
+    angle = atan2(det, dot)
+    if d*angle < 0:
+        if angle >= 0:
+            angle -= 2 * pi
+        else:
+            angle += 2 * pi
+    return angle
 
 if __name__ == '__main__':
     
-    g = Point(0, 0, pi/2)
-    s = Point(10, 10, 0)
-    print(tangent_points(s, 5, -1, g, 5, -1))
+    g = Point(0, -10, -pi/2)
+    s = Point(20, 20, -pi/2)
+    bends = [(Point(20, 10, -pi/2), Point(15, 5, pi), Point(15, 10, 0), -1),
+             (Point(5,5,pi), Point(0,0,-pi/2), Point(5,0,0), 1)]
+    print(path(s, g, bends, 1))
     # min_rad = 2
     # min_straight = 3
     # shortest_route(s, g, min_rad, min_straight)
-
-

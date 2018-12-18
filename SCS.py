@@ -92,7 +92,12 @@ def path(s, g, bends=[], spacing=1):
     else:
         # build up a path
         # first straight
-        p, lo = straight_points(s, bends[0][0], spacing)
+        if (s.x == bends[1][1].x and s.y == bends[1][1].y 
+            and s.dx == bends[1][1].dx and s.dy == bends[1][1].dy):
+            p = [s]
+            lo = 0
+        else:
+            p, lo = straight_points(s, bends[0][0], spacing)
         # loop through each bend
         for n in range(len(bends) - 1):
             # arc
@@ -105,7 +110,9 @@ def path(s, g, bends=[], spacing=1):
         pts, lo = bend_points(bends[-1], spacing, lo)
         p.extend(pts)
         # last straight
-        p.extend(straight_points(bends[-1][1], g, spacing, lo)[0])
+        if (g.x != bends[-1][1].x or g.y != bends[-1][1].y 
+            or g.dx != bends[-1][1].dx or g.dy != bends[-1][1].dy):
+            p.extend(straight_points(bends[-1][1], g, spacing, lo)[0])
         return p
 
 def tangent_points(sc, s_rad, st_dir, gc, g_rad, gt_dir):
@@ -180,7 +187,7 @@ def angle_between(s, g, d):
 if __name__ == '__main__':
     
     g = Point(0, -10, -pi/2)
-    s = Point(20, 20, -pi/2)
+    s = Point(20, 10, -pi/2)
     bends = [(Point(20, 10, -pi/2), Point(15, 5, pi), Point(15, 10, 0), -1),
              (Point(5,5,pi), Point(0,0,-pi/2), Point(5,0,0), 1)]
     print(path(s, g, bends, 1))

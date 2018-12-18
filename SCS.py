@@ -12,6 +12,9 @@ class Point:
     def __str__(self):
         return f"({self.x:.2f}, {self.y:.2f}) + ({self.dx:.2f}, {self.dy:.2f})"
 
+def dist(p1, p2):
+    return ((p2.x-p1.x)**2 - (p2.y-p1.y)**2)**0.5
+
 def dist2intersect(p1, p2):
     dv = np.array([[p1.dx, -p2.dx], [p1.dy, -p2.dy]])
     lv = np.array([p2.x-p1.x, p2.y-p1.y])
@@ -22,7 +25,6 @@ def angle2intersect(p1, p2):
 
 def turn_dir(p1, p2):
     return np.cross([p1.dx, p1.dy], [p2.dx, p2.dy])
-
 
 def dist2tangents(p1, p2, r):
     t_dir = turn_dir(p1, p2)
@@ -42,21 +44,60 @@ def rotate(p, t):
     return Point(p.x, p.y, new_heading)
 
 
-def make_SCS(s, g, min_rad, min_straight):
-    # criteria for a valid path
-    ds = dist2intersect(s, g)
-    # intersection point is after start and before goal
-    if not (ds[0] >= 0 and ds[1] <= 0):
-        return []
-    # tangent points are at least a minimum straight length from the vector
-    d2tans = dist2tangents(s, g, min_rad)
-    if not (d2tans[0]>min_straight and d2tans[1]<-min_straight):
-        return []
-    # we can fit in a path....what's the max radius bend?
-    # find it's centre...
-    dt2i = np.min(np.abs(ds)) - min_straight
-    print(dt2i)
+def shortest_route(s, g, min_rad, min_straight, heading_tol, location_tol, spacing):
+    """ An SCS path is an SCSCS path where the straight length is 0.
+    If this invalidates our minimum straight length then we need to
+    increase the bend radius to make the turn in an SCS. 
+    """
+    if abs(angle2intersect(s, g)) < heading_tol:
+        d = dist(s, g)
+        if d > min_straight:
+            return straight_points(s, g, spacing)
+    # find tangent points
+    st = Point(s.x+min_straight*s.dx, s.y+min_straight*s.dy, atan2(s.dy, s.dx))
+    gt = Point(g.x-min_straight*g.dx, g.y-min_straight*g.dy, atan2(g.dy, g.dx))
+    # and the start and goal turn directions
+    st_dir = turn_dir(st, gt)
+    gt_dir = turn_dir(gt, st)
+    # get the centres of both arcs
+    sc = rotate(st, st_dir*2/pi)
+    sc.x += min_rad*sc.dx
+    sc.y += min_rad*sc.dy
+    gc = rotate(gt, gt_dir*pi/2)
+    gc.x += min_rad*gc.dx
+    gc.y += min_rad*gc.dy
+    dc = dist(sc, gc)
+    # if we can fit a valid straight length in:
+    if ((st_dir == gt_dir and dc > min_straight)
+        or (st_dir != gt_dir and (dc**2 - (2*min_rad)**2)**0.5 > min_straight)):
+            return SCSCS_point(s, st, sc, st_dir, g, gt, gc, gt_dir, min_rad, spacing)
+    else:
+        # figure out whether we need a SCSCSCS path, or just a SCS path
+        pass
 
+def SCSCS_point(s, st, sc, st_dir, g, gt, gc, gt_dir, rad, spacing):
+    sc = Point(sc.x, sc.y, atan2(gc.y-sc.y, gc.x-sc.x))
+    rv = rotate(sc, -st_dir*acos(2*rad/dist(sc, gc)))
+    c1n = angle_c1c2 + st_dir*t
+    sc = Point(sc.x, sc.y, atan2(gc.y-sc.y, gc.x-sc.x))
+    p = straight_points(s, st, spacing)
+    leftover = dist(s, st) - (len(p)-1)*spacing
+
+
+
+
+
+def straight_points(s, g, spacing, leftover=0):
+    if leftover != 0:
+        ds = spacing - leftover
+        s.x += ds * s.dx
+        s.y += ds * s.dy
+    d = dist(s, g)
+    incs = int(d/spacing)
+    xs = np.linspace(s.x, s.x+s.dx*incs, incs+1)
+    ys = np.linspace(s.y, s.y+s.dy*incs, incs+1)
+    heading = atan2(s.dy, s.dx)
+    return [Point(x, y, heading=heading) for x, y in np.stack((xs, ys), axis=-1)]
 
 if __name__ == '__main__':
     

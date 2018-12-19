@@ -100,19 +100,23 @@ def path(s, g, bends=[], spacing=1):
             p, lo = straight_points(s, sb, spacing)
         # loop through each bend
         for n in range(len(bends) - 1):
+            b = bends[n]
+            nb = bends[n+1]
             # arc
-            pts, lo = bend_points(bends[n], spacing, lo)
+            pts, lo = bend_points(b, spacing, lo)
             p.extend(pts)
             # then straight
-            pts, lo = straight_points(bends[n][1], bends[n+1][0], spacing, lo)
+            pts, lo = straight_points(b[1], nb[0], spacing, lo)
             p.extend(pts)
         # last bend
-        pts, lo = bend_points(bends[-1], spacing, lo)
+        b = bends[-1]
+        pts, lo = bend_points(b, spacing, lo)
         p.extend(pts)
         # last straight
-        if (g.x != bends[-1][1].x or g.y != bends[-1][1].y 
-            or g.dx != bends[-1][1].dx or g.dy != bends[-1][1].dy):
-            p.extend(straight_points(bends[-1][1], g, spacing, lo)[0])
+        bg = b[1]
+        if (g.x != bg.x or g.y != bg.y 
+            or g.dx != bg.dx or g.dy != bg.dy):
+            p.extend(straight_points(bg, g, spacing, lo)[0])
         return p
 
 def tangent_points(sc, s_rad, st_dir, gc, g_rad, gt_dir):

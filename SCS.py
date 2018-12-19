@@ -92,12 +92,12 @@ def path(s, g, bends=[], spacing=1):
     else:
         # build up a path
         # first straight
-        if (s.x == bends[1][1].x and s.y == bends[1][1].y 
-            and s.dx == bends[1][1].dx and s.dy == bends[1][1].dy):
+        sb = bends[0][0]
+        if s.x == sb.x and s.y == sb.y and s.dx == sb.dx and s.dy == sb.dy:
             p = [s]
             lo = 0
         else:
-            p, lo = straight_points(s, bends[0][0], spacing)
+            p, lo = straight_points(s, sb, spacing)
         # loop through each bend
         for n in range(len(bends) - 1):
             # arc
@@ -167,9 +167,6 @@ def bend_points(bend, spacing, leftover=0):
     leftover = abs(abs(tg)-abs(tl[-1])) * r
     return p, leftover
 
-def chord_length(rad, arc_length):
-    return 2 * rad * sin(arc_length / 2 / r)
-
 def angle_between(s, g, d):
     # dot product between [x1, y1] and [x2, y2]
     dot = s.dx*g.dx + s.dy*g.dy   
@@ -186,11 +183,8 @@ def angle_between(s, g, d):
 
 if __name__ == '__main__':
     
-    g = Point(0, -10, -pi/2)
+    g = Point(0, 0, -pi/2)
     s = Point(20, 10, -pi/2)
     bends = [(Point(20, 10, -pi/2), Point(15, 5, pi), Point(15, 10, 0), -1),
              (Point(5,5,pi), Point(0,0,-pi/2), Point(5,0,0), 1)]
     print(path(s, g, bends, 1))
-    # min_rad = 2
-    # min_straight = 3
-    # shortest_route(s, g, min_rad, min_straight)

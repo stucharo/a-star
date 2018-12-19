@@ -86,18 +86,17 @@ def path(s, g, bends=[], spacing=1):
     """ Construct a path from s to g, at increments of spacing, around
     each bend listed in bends. Bends are defined by (bs, bg, bc, d).
     """
+    p = [s]
     # if we just have a straight path
     if len(bends) == 0:
-        return straight_points(s, g, spacing)[0]
+        return p.extend(straight_points(s, g, spacing)[0])
     else:
         # build up a path
         # first straight
         sb = bends[0][0]
-        if s.x == sb.x and s.y == sb.y and s.dx == sb.dx and s.dy == sb.dy:
-            p = [s]
-            lo = 0
-        else:
-            p, lo = straight_points(s, sb, spacing)
+        if s.x != sb.x or s.y != sb.y:
+            pts, lo = straight_points(s, sb, spacing)
+            p.extend(pts)
         # loop through each bend
         for n in range(len(bends) - 1):
             b = bends[n]
@@ -106,8 +105,9 @@ def path(s, g, bends=[], spacing=1):
             pts, lo = bend_points(b, spacing, lo)
             p.extend(pts)
             # then straight
-            pts, lo = straight_points(b[1], nb[0], spacing, lo)
-            p.extend(pts)
+            if b[1].x != nb[0].x or b[1].y != nb[0].y :
+                pts, lo = straight_points(b[1], nb[0], spacing, lo)
+                p.extend(pts)
         # last bend
         b = bends[-1]
         pts, lo = bend_points(b, spacing, lo)
@@ -141,14 +141,13 @@ def tangent_points(sc, s_rad, st_dir, gc, g_rad, gt_dir):
 
 def straight_points(s, g, spacing, leftover=0):
     ds = spacing - leftover
-    s.x += ds * s.dx
-    s.y += ds * s.dy
-    d = dist(s, g)
+    sp = Point(s.x + ds*s.dx, s.y + ds*s.dy, atan2(s.dy, s.dx))
+    d = dist(sp, g)
     incs = int(d/spacing)
     lo = d - incs*spacing 
-    xs = np.linspace(s.x, s.x+s.dx*incs, incs+1)
-    ys = np.linspace(s.y, s.y+s.dy*incs, incs+1)
-    heading = atan2(s.dy, s.dx)
+    xs = np.linspace(sp.x, sp.x+sp.dx*incs, incs+1)
+    ys = np.linspace(sp.y, sp.y+sp.dy*incs, incs+1)
+    heading = atan2(sp.dy, sp.dx)
     return [Point(x, y, heading=heading) for x, y in np.stack((xs, ys), axis=-1)], lo
 
 def bend_points(bend, spacing, leftover=0):
@@ -186,9 +185,16 @@ def angle_between(s, g, d):
     return angle
 
 if __name__ == '__main__':
-    
-    g = Point(0, 0, -pi/2)
-    s = Point(20, 10, -pi/2)
-    bends = [(Point(20, 10, -pi/2), Point(15, 5, pi), Point(15, 10, 0), -1),
-             (Point(5,5,pi), Point(0,0,-pi/2), Point(5,0,0), 1)]
-    print(path(s, g, bends, 1))
+
+    import matplotlib.pyplot as plt
+
+    s = Point(0, -5, pi/2)
+    g = Point(15, 15, pi/2)
+    bends = [(Point(0,0,pi/2), Point(5,5,0), Point(5,0,0), -1),
+             (Point(10, 5, 0), Point(15, 10, pi/2), Point(10, 10, 0), 1)]
+    path = path(s, g, bends, 1)
+    pts = np.array([[p.x, p.y] for p in path])
+    plt.plot(pts[:,0], pts[:,1])
+    plt.scatter(pts[:,0], pts[:,1])
+    plt.axis('equal')
+    plt.show()

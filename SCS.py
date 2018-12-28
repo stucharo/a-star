@@ -1,5 +1,5 @@
 import numpy as np
-from math import pi, sin, cos, asin, acos, atan2
+from math import pi, sin, cos, asin, acos, atan, atan2
 
 
 class Point:
@@ -30,12 +30,15 @@ def angle2intersect(p1, p2):
     return np.arccos(np.clip(np.dot([p1.dx, p1.dy], [p2.dx, p2.dy]), -1.0, 1.0))
 
 def turn_dir(p1, p2):
-    
-    return np.cross([p1.x, p1.y], [p2.dx, p2.dy])
+    cp = np.cross([p1.dx, p1.dy], [p2.x-p1.x, p2.y-p1.y])
+    if cp < 0:
+        return -1
+    else:
+        return 1
 
 def get_centre(p):
-    rp = copy_pt(p, 0, 0, normalize_angle(atan2(p.dy, p.dx)*pi/2))
-    return copy_pt(rp, p.radius*rp.dx, p.radius*rp.dy, 0)
+    rp = copy_pt(p, 0, 0, direction(p)*pi/2)
+    return copy_pt(rp, abs(p.radius)*rp.dx, abs(p.radius)*rp.dy, 0)
 
 def dist2tangents(p1, p2, r):
     t_dir = turn_dir(p1, p2)
@@ -78,22 +81,26 @@ def S_path(s, g, min_straight, heading_tol, location_tol, spacing):
         return []
 
 def SCSCS_path(s, g, min_rad, min_straight, spacing):
+    # first, lets find out where we're going
+    gbg = copy_pt(g, -min_straight*g.dx, -min_straight*g.dy, 0)
     # we're really interested in the relative locations of the first bend start and the last bend end
     if s.radius == 0:
+        # we're not on a bend so we can start a new bend here
         sbs = copy_pt(s, 0, 0, 0)
     elif s.radius * turn_dir(s, g) > 0:
+        # we're on a bend going the right way
         sbs = copy_pt(s, 0, 0, 0)
         sbs.radius = s.radius
     else:
+        # we're on a bend going the wrong way.
+        # to avoid crossing our old path we must go the minimum straight distance and start a bend there
         sbs = copy_pt(s, min_straight*s.dx, min_straight*s.dy, 0)
+        sbs.radius = -1 * direction(s) * min_rad
     if sbs.radius == 0:
-
-    gbg = copy_pt(g, -min_straight*g.dx, -min_straight*g.dy, 0)
-    s_dir = direction(sbs)
-    g_dir = direction(gbg)
-    gbg.radius = g_dir * min_rad
-    if sbs.radius == 0:
-        sbs.radius = s_dir * min_rad
+        # we need to set it to minimum bend radius but we must calculate the direction to
+        # give it the correct sign
+        sbs.radius = turn_dir(sbs, gbg) * min_rad
+    gbg.radius = turn_dir(gbg, sbs) * min_rad
     sbg, gbs = tangent_points(sbs, gbg)
     if dist(sbg, gbs) > min_straight:
         bends = [(sbs, sbg), (gbs, gbg)]
@@ -112,38 +119,7 @@ def shortest_route(s, g, min_rad, min_straight, heading_tol, location_tol, spaci
     if len(p) > 0:
         return p
     return []
-    # Step 1. find the first point, 
-    # can we go straight there?
-    # if not, can 
-    # if abs(angle2intersect(s, g)) < heading_tol:
-    #     # and we're on a 
-    # if s.r == 0 and abs(angle2intersect(s, g)) < heading_tol:
-    #     return path(s, g, spacing=spacing)
-    # elif s.r != 0 and abs(angle2intersect(s, g)) < heading_tol:
-    #     d = dist(s, g)
-    #     if d > min_straight:
-    #         return path(s, g, spacing=spacing)
-    # # find tangent points
-    # st = Point(s.x+min_straight*s.dx, s.y+min_straight*s.dy, atan2(s.dy, s.dx))
-    # gt = Point(g.x-min_straight*g.dx, g.y-min_straight*g.dy, atan2(g.dy, g.dx))
-    # # and the start and goal turn directions
-    # st_dir = turn_dir(st, gt)
-    # gt_dir = turn_dir(gt, st)
-    # # get the centres of both arcs
-    # sc = copy_pt(st, 0, 0, st_dir*2/pi)
-    # sc.x += min_rad*sc.dx
-    # sc.y += min_rad*sc.dy
-    # gc = copy_pt(gt, 0, 0, gt_dir*pi/2)
-    # gc.x += min_rad*gc.dx
-    # gc.y += min_rad*gc.dy
-    # dc = dist(sc, gc)
-    # # if we can fit a valid straight length in:
-    # if ((st_dir == gt_dir and dc > min_straight)
-    #     or (st_dir != gt_dir and (dc**2 - (2*min_rad)**2)**0.5 > min_straight)):
-    #         return SCSCS_point(s, st, sc, st_dir, g, gt, gc, gt_dir, min_rad, spacing)
-    # else:
-    #     # figure out whether we need a SCSCSCS path, or just a SCS path
-    #     pass
+
 
 def path(s, g, bends=[], spacing=1):
     """ Construct a path from s to g, at increments of spacing, around
@@ -161,6 +137,8 @@ def path(s, g, bends=[], spacing=1):
         if s.x != sb.x or s.y != sb.y:
             pts, lo = straight_points(s, sb, spacing)
             p.extend(pts)
+        else:
+            lo = 0
         # loop through each bend
         for n in range(len(bends) - 1):
             b = bends[n]
@@ -188,22 +166,28 @@ def tangent_points(s, g):
     gc = get_centre(g)
     # distance between arc centres
     dc = dist(sc, gc)
-    # if we're looking for an outer tangent
     ds = direction(s)
     dg = direction(g)
     if ds * dg > 0:
-        da = atan2(gc.y-sc.y, gc.x-sc.y)
+        # if the turn directions are both the same then we're looking for an outer tangent
+        # so the heading of the tangent is parallel to the line between the centres
+        da = atan2(gc.y-sc.y, gc.x-sc.x)
+        # and the distance
         dt = dc
     else:
-        da = atan2(gc.y-sc.y, gc.x-sc.y) + ds * asin((abs(s.radius)+abs(g.radius))/dc)
+        # get the angle of the tangent line
+        da = atan2(gc.y-sc.y, gc.x-sc.x) + ds * asin((abs(s.radius)+abs(g.radius))/dc)
+        # and the distance
         dt = (dc**2 - (abs(s.radius)+abs(g.radius))**2)**0.5
     da = normalize_angle(da)
     # normal vector points from centre of sc to tp
     vn = normalize_angle(da - ds * pi / 2)
     # start point is s_rad along vn from sc, heading is da
     ts = Point(sc.x+abs(s.radius)*cos(vn), sc.y+abs(s.radius)*sin(vn), da)
+    ts.radius = s.radius
     # end point is dt along da from start point, heading is da
     te = Point(ts.x+dt*cos(da), ts.y+dt*sin(da), da)
+    te.radius = g.radius
 
     return ts, te
 
@@ -240,7 +224,7 @@ def bend_points(bend, spacing, leftover=0):
     inc = int(tt / dt)
     tl = np.linspace(ts, ts + inc*dt, inc+1)
     p = [Point(bc.x+r*cos(t), bc.y+r*sin(t), t + d*pi/2) for t in tl]
-    leftover = abs(abs(tg)-abs(tl[-1])) * r
+    leftover = abs(abs(tg)-abs(normalize_angle(tl[-1]))) * r
     return p, leftover
 
 def angle_between(s, g, d):
@@ -261,9 +245,9 @@ if __name__ == '__main__':
 
     import matplotlib.pyplot as plt
 
-    s = Point(0, 0, 0)
-    g = Point(15, 15, 0)
-    min_straight = 10
+    g = Point(0, 0, pi/2)
+    s = Point(5, 0, pi/2, radius=2)
+    min_straight = 1
     min_rad = 2
     heading_tol = pi / 180
     location_tol = 1

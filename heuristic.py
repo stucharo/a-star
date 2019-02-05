@@ -62,11 +62,11 @@ def normalize_angle(a):
     else:
         return a
 
-def S_path(s, g, min_straight, heading_tol, location_tol, spacing):
+def S_path(s, g, min_straight, heading_tol, location_tol, spacing=1):
     # are they colinear
     d = dist(s, g)
-    if (abs(atan2(g.dy, g.dx) - atan2(s.dy, s.dx)) < heading_tol
-        and dist(copy_pt(s, d*s.dx, d*s.dy, 0), g) < location_tol):
+    if (abs(atan2(g.dy, g.dx) - atan2(s.dy, s.dx)) <= heading_tol
+        and dist(copy_pt(s, d*s.dx, d*s.dy, 0), g) <= location_tol):
         # and far enough apart
         if s.radius == 0:
             # they are always at least the minimum straight length apart
@@ -111,6 +111,37 @@ def SCSCS_path(s, g, min_rad, min_straight, spacing):
     else:
         return []
 
+def SCSCSCS_path(s, g, min_rad, min_straight, spacing):
+    # first, lets find out where we're going
+    gbg = copy_pt(g, -min_straight*g.dx, -min_straight*g.dy, 0)
+    # we're really interested in the relative locations of the first bend start and the last bend end
+    if s.radius == 0:
+        # we're not on a bend so we can start a new bend here
+        sbs = copy_pt(s, 0, 0, 0)
+    elif s.radius * turn_dir(s, g) > 0:
+        # we're on a bend going the right way
+        sbs = copy_pt(s, 0, 0, 0)
+        sbs.radius = s.radius
+    else:
+        # we're on a bend going the wrong way.
+        # to avoid crossing our old path we must go the minimum straight distance and start a bend there
+        sbs = copy_pt(s, min_straight*s.dx, min_straight*s.dy, 0)
+        sbs.radius = -1 * direction(s) * min_rad
+    if sbs.radius == 0:
+        # we need to set it to minimum bend radius but we must calculate the direction to
+        # give it the correct sign
+        sbs.radius = turn_dir(sbs, gbg) * min_rad
+    gbg.radius = turn_dir(gbg, sbs) * min_rad
+    t = tangent_points(sbs, gbg)
+    if t is None:
+        return []
+    sbg, gbs = t
+    if dist(sbg, gbs) > min_straight or (dist(sbg, gbs) == 0 and direction(sbg) == direction(gbs)):
+        bends = [(sbs, sbg), (gbs, gbg)]
+        return path(s, g, bends=bends, spacing=spacing)
+    else:
+        return []
+
 def shortest_route(s, g, min_rad, min_straight, heading_tol, location_tol, spacing):
     """ Route options:
         1. We can make it in a straight line.
@@ -121,21 +152,24 @@ def shortest_route(s, g, min_rad, min_straight, heading_tol, location_tol, spaci
            minimum straight lengths
         4. 
     """
-    if path_is_invalid():
-        return []
     p = S_path(s, g, min_straight, heading_tol, location_tol, spacing)
     if len(p) > 0:
         return p
     p = SCSCS_path(s, g, min_rad, min_straight, spacing)
     if len(p) > 0:
         return p
-    return []
+    p = SCSCSCS_path(s, g, min_rad, min_straight, spacing)
+    return p
 
-def path_is_invalid():
-    """ Invalid cases:
+def shortest_path(s, g, min_rad, min_straight, heading_tol, location_tol, spacing):
+    # does a straight line work?
+    p = S_path(s, g, min_straight, heading_tol, location_tol, spacing)
+    if len(p) > 0:
+        return p
+    # do the two lines cross?
+        # can you fit in 1 bend?
+    pass
 
-        1. Goal 
-    """
 
 def path(s, g, bends=[], spacing=1):
     """ Construct a path from s to g, at increments of spacing, around
@@ -160,7 +194,7 @@ def path(s, g, bends=[], spacing=1):
             b = bends[n]
             nb = bends[n+1]
             # arc
-            pts, lo = bend_points(b, spacing, lo)
+            pts, lo = bend_points(b[0], b[1], spacing, lo)
             p.extend(pts)
             # then straight
             if b[1].x != nb[0].x or b[1].y != nb[0].y :
@@ -168,7 +202,7 @@ def path(s, g, bends=[], spacing=1):
                 p.extend(pts)
         # last bend
         b = bends[-1]
-        pts, lo = bend_points(b, spacing, lo)
+        pts, lo = bend_points(b[0], b[1], spacing, lo)
         p.extend(pts)
         # last straight
         bg = b[1]
@@ -185,16 +219,18 @@ def tangent_points(s, g):
     ds = direction(s)
     dg = direction(g)
     if ds * dg > 0:
-        if sc.x == gc.x and sc.y == gc.y:
-            # we only have one circle with a 
         # if the turn directions are both the same then we're looking for an outer tangent
-        # so the heading of the tangent is parallel to the line between the centres
-        da = atan2(gc.y-sc.y, gc.x-sc.x)
+        # so the heading of the tangent is parallel to the line between the centre of 1
+        # circle and it's tangent on a circle centred on the second circle, with a radius
+        # equal to the difference in radii. This defaults to the centre of the second
+        # circle when they are equal radius
+        # da = atan2(gc.y-sc.y, gc.x-sc.x)
+        da = atan2(gc.y-sc.y, gc.x-sc.x) + ds * asin(abs(abs(s.radius)-abs(g.radius))/dc)
         # and the distance
-        dt = dc
+        dt = (dc**2 - abs(abs(s.radius)-abs(g.radius))**2)**0.5
     else:
         # get the angle of the tangent line
-        if -1 <= abs(s.radius)+abs(g.radius)/dc <= 1:
+        if -1 <= (abs(s.radius)+abs(g.radius))/dc <= 1:
             da = atan2(gc.y-sc.y, gc.x-sc.x) + ds * asin((abs(s.radius)+abs(g.radius))/dc)
             # and the distance
             dt = (dc**2 - (abs(s.radius)+abs(g.radius))**2)**0.5
@@ -217,6 +253,12 @@ def direction(p):
     return p.radius / abs(p.radius)
 
 def straight_points(s, g, spacing, leftover=0):
+    """ Generate a list of points along a straight line between the `s`
+    and `g` Points. Note that this assumes the previous section 
+    included the first point of this list, so this list returns the
+    next point along the path. That is, this routine will never return
+    a point at `s`.
+    """
     ds = spacing - leftover
     sp = Point(s.x + ds*s.dx, s.y + ds*s.dy, atan2(s.dy, s.dx))
     d = dist(sp, g)
@@ -227,8 +269,7 @@ def straight_points(s, g, spacing, leftover=0):
     heading = atan2(sp.dy, sp.dx)
     return [Point(x, y, heading=heading) for x, y in np.stack((xs, ys), axis=-1)], lo
 
-def bend_points(bend, spacing, leftover=0):
-    bs, bg = bend[0], bend[1]
+def bend_points(bs, bg, spacing, leftover=0):
     bc = get_centre(bs)
     r = abs(bs.radius)
     d = direction(bs)
@@ -267,18 +308,18 @@ if __name__ == '__main__':
     
     import matplotlib.pyplot as plt
     import random
-    actual = True
+    actual = False
     if actual:
-        min_rad = 5
-        rads = [-15, 0, 15]
-        start_rad = -5
-        min_straight = 5
-        sx = 0
-        sy = 0
-        sh = 0
-        gx = 0
-        gy = 10
-        gh = pi
+        min_rad = 7
+        rads = [-15, -14, -13, -12, -11, -10, -9, -8, -7, 0, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+        start_rad = -15
+        min_straight = 9
+        sx = 0.1030845139310177
+        sy = 71.51876714734449
+        sh = 2.9482359731231185
+        gx = 61.879570168852815
+        gy = 79.1234345823733
+        gh = -1.674840213013659
     else:
         max_rad = 15
         min_rad = random.randint(2, max_rad)
@@ -308,5 +349,5 @@ if __name__ == '__main__':
         pts = np.asarray([(pt.x, pt.y) for pt in p])
         plt.plot(pts[:,0], pts[:,1])
         plt.scatter(pts[:,0], pts[:,1])
-        plt.axis('equal')
-        plt.show()
+    plt.axis('equal')
+    plt.show()

@@ -21,14 +21,6 @@ class Point:
 def dist(p1, p2):
     return ((p2.x-p1.x)**2 + (p2.y-p1.y)**2)**0.5
 
-def dist2intersect(p1, p2):
-    dv = np.array([[p1.dx, -p2.dx], [p1.dy, -p2.dy]])
-    lv = np.array([p2.x-p1.x, p2.y-p1.y])
-    return np.linalg.solve(dv, lv)
-
-def angle2intersect(p1, p2):
-    return np.arccos(np.clip(np.dot([p1.dx, p1.dy], [p2.dx, p2.dy]), -1.0, 1.0))
-
 def turn_dir(p1, p2):
     cp = np.cross([p1.dx, p1.dy], [p2.x-p1.x, p2.y-p1.y])
     if cp < 0:
@@ -39,14 +31,6 @@ def turn_dir(p1, p2):
 def get_centre(p):
     rp = copy_pt(p, 0, 0, direction(p)*pi/2)
     return copy_pt(rp, abs(p.radius)*rp.dx, abs(p.radius)*rp.dy, 0)
-
-def dist2tangents(p1, p2, r):
-    t_dir = turn_dir(p1, p2)
-    rp1 = copy_pt(p1, 0, 0, t_dir*pi/2)
-    rp2 = copy_pt(p2, 0, 0, t_dir*pi/2)
-    dv = np.array([[p1.dx, -p2.dx], [p1.dy, -p2.dy]])
-    lv = np.array([p2.x+r*rp2.dx-(p1.x+r*rp1.dx), p2.y+r*rp2.dy-(p1.y+r*rp1.dy)])
-    return np.linalg.solve(dv, lv)
 
 def copy_pt(p, dx, dy, dt):
     in_angle = atan2(p.dy, p.dx)

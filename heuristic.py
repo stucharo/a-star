@@ -88,37 +88,12 @@ def SCSCS_path(s, g, min_rad, min_straight, spacing):
     t = tangent_points(sbs, gbg)
     if t is None:
         return []
-    sbg, gbs = t
-    if dist(sbg, gbs) > min_straight or (dist(sbg, gbs) == 0 and direction(sbg) == direction(gbs)):
-        bends = [(sbs, sbg), (gbs, gbg)]
-        return path(s, g, bends=bends, spacing=spacing)
-    else:
-        return []
-
-def SCSCSCS_path(s, g, min_rad, min_straight, spacing):
-    # first, lets find out where we're going
-    gbg = copy_pt(g, -min_straight*g.dx, -min_straight*g.dy, 0)
-    # we're really interested in the relative locations of the first bend start and the last bend end
-    if s.radius == 0:
-        # we're not on a bend so we can start a new bend here
-        sbs = copy_pt(s, 0, 0, 0)
-    elif s.radius * turn_dir(s, g) > 0:
-        # we're on a bend going the right way
-        sbs = copy_pt(s, 0, 0, 0)
-        sbs.radius = s.radius
-    else:
-        # we're on a bend going the wrong way.
-        # to avoid crossing our old path we must go the minimum straight distance and start a bend there
-        sbs = copy_pt(s, min_straight*s.dx, min_straight*s.dy, 0)
-        sbs.radius = -1 * direction(s) * min_rad
-    if sbs.radius == 0:
-        # we need to set it to minimum bend radius but we must calculate the direction to
-        # give it the correct sign
-        sbs.radius = turn_dir(sbs, gbg) * min_rad
-    gbg.radius = turn_dir(gbg, sbs) * min_rad
-    t = tangent_points(sbs, gbg)
-    if t is None:
-        return []
+    if turn_dir(gbg, t[0]) != direction(gbg):
+        gbg.radius *= -1
+        t = tangent_points(sbs, gbg)
+    if turn_dir(sbs, t[1]) != direction(sbs):
+        gbg.radius *= -1
+        t = tangent_points(sbs, gbg)
     sbg, gbs = t
     if dist(sbg, gbs) > min_straight or (dist(sbg, gbs) == 0 and direction(sbg) == direction(gbs)):
         bends = [(sbs, sbg), (gbs, gbg)]
@@ -142,18 +117,7 @@ def shortest_route(s, g, min_rad, min_straight, heading_tol, location_tol, spaci
     p = SCSCS_path(s, g, min_rad, min_straight, spacing)
     if len(p) > 0:
         return p
-    p = SCSCSCS_path(s, g, min_rad, min_straight, spacing)
-    return p
-
-def shortest_path(s, g, min_rad, min_straight, heading_tol, location_tol, spacing):
-    # does a straight line work?
-    p = S_path(s, g, min_straight, heading_tol, location_tol, spacing)
-    if len(p) > 0:
-        return p
-    # do the two lines cross?
-        # can you fit in 1 bend?
-    pass
-
+    return []
 
 def path(s, g, bends=[], spacing=1):
     """ Construct a path from s to g, at increments of spacing, around
@@ -294,16 +258,16 @@ if __name__ == '__main__':
     import random
     actual = False
     if actual:
-        min_rad = 7
-        rads = [-15, -14, -13, -12, -11, -10, -9, -8, -7, 0, 7, 8, 9, 10, 11, 12, 13, 14, 15]
-        start_rad = -15
-        min_straight = 9
-        sx = 0.1030845139310177
-        sy = 71.51876714734449
-        sh = 2.9482359731231185
-        gx = 61.879570168852815
-        gy = 79.1234345823733
-        gh = -1.674840213013659
+        min_rad = 12
+        rads = [-15, -14, -13, -12, 0, 12, 13, 14, 15]
+        start_rad = 0
+        min_straight = 10
+        sx = 24.740583304172137
+        sy = 50.36969667507735
+        sh = 2.840395189256073
+        gx = 13.226612622299294
+        gy = 58.99167386202944
+        gh = -2.771550305600809
     else:
         max_rad = 15
         min_rad = random.randint(2, max_rad)

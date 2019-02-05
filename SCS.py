@@ -101,8 +101,11 @@ def SCSCS_path(s, g, min_rad, min_straight, spacing):
         # give it the correct sign
         sbs.radius = turn_dir(sbs, gbg) * min_rad
     gbg.radius = turn_dir(gbg, sbs) * min_rad
-    sbg, gbs = tangent_points(sbs, gbg)
-    if dist(sbg, gbs) > min_straight:
+    t = tangent_points(sbs, gbg)
+    if t is None:
+        return []
+    sbg, gbs = t
+    if dist(sbg, gbs) > min_straight or (dist(sbg, gbs) == 0 and direction(sbg) == direction(gbs)):
         bends = [(sbs, sbg), (gbs, gbg)]
         return path(s, g, bends=bends, spacing=spacing)
     else:
@@ -111,7 +114,15 @@ def SCSCS_path(s, g, min_rad, min_straight, spacing):
 def shortest_route(s, g, min_rad, min_straight, heading_tol, location_tol, spacing):
     """ Route options:
         1. We can make it in a straight line.
+        2. Stright - curve - straight - curve - striahgt cuts the 
+           corner, but only works if we can fit the minimum straight
+           lengths.
+        3. Straight - curve - straight works if we we can fit the 
+           minimum straight lengths
+        4. 
     """
+    if path_is_invalid():
+        return []
     p = S_path(s, g, min_straight, heading_tol, location_tol, spacing)
     if len(p) > 0:
         return p
@@ -120,6 +131,11 @@ def shortest_route(s, g, min_rad, min_straight, heading_tol, location_tol, spaci
         return p
     return []
 
+def path_is_invalid():
+    """ Invalid cases:
+
+        1. Goal 
+    """
 
 def path(s, g, bends=[], spacing=1):
     """ Construct a path from s to g, at increments of spacing, around
@@ -169,6 +185,8 @@ def tangent_points(s, g):
     ds = direction(s)
     dg = direction(g)
     if ds * dg > 0:
+        if sc.x == gc.x and sc.y == gc.y:
+            # we only have one circle with a 
         # if the turn directions are both the same then we're looking for an outer tangent
         # so the heading of the tangent is parallel to the line between the centres
         da = atan2(gc.y-sc.y, gc.x-sc.x)
@@ -176,9 +194,13 @@ def tangent_points(s, g):
         dt = dc
     else:
         # get the angle of the tangent line
-        da = atan2(gc.y-sc.y, gc.x-sc.x) + ds * asin((abs(s.radius)+abs(g.radius))/dc)
-        # and the distance
-        dt = (dc**2 - (abs(s.radius)+abs(g.radius))**2)**0.5
+        if -1 <= abs(s.radius)+abs(g.radius)/dc <= 1:
+            da = atan2(gc.y-sc.y, gc.x-sc.x) + ds * asin((abs(s.radius)+abs(g.radius))/dc)
+            # and the distance
+            dt = (dc**2 - (abs(s.radius)+abs(g.radius))**2)**0.5
+        else:
+            # we can't find an inner tangent for two circles that overlap
+            return None
     da = normalize_angle(da)
     # normal vector points from centre of sc to tp
     vn = normalize_angle(da - ds * pi / 2)
@@ -242,19 +264,48 @@ def angle_between(s, g, d):
     return angle
 
 if __name__ == '__main__':
-
+    
     import matplotlib.pyplot as plt
-
-    g = Point(0, 0, pi/2)
-    s = Point(5, 0, pi/2, radius=2)
-    min_straight = 1
-    min_rad = 2
-    heading_tol = pi / 180
+    import random
+    actual = True
+    if actual:
+        min_rad = 5
+        rads = [-15, 0, 15]
+        start_rad = -5
+        min_straight = 5
+        sx = 0
+        sy = 0
+        sh = 0
+        gx = 0
+        gy = 10
+        gh = pi
+    else:
+        max_rad = 15
+        min_rad = random.randint(2, max_rad)
+        rads = []
+        rads.extend(range(-max_rad, -min_rad+1))
+        rads.extend([0])
+        rads.extend(range(min_rad, max_rad+1))
+        start_rad = random.choice(rads)
+        sx = random.uniform(0, 100)
+        sy = random.uniform(0, 100)
+        sh = random.uniform(-pi, pi)
+        gx = random.uniform(0, 100)
+        gy = random.uniform(0, 100)
+        gh = random.uniform(-pi, pi)
+        min_straight = random.randint(0, 10)
+    s = Point(sx, sy, sh, radius=start_rad)
+    g = Point(gx, gy, gh)
+    heading_tol = pi/180
     location_tol = 1
     spacing = 1
-    r = shortest_route(s, g, min_rad, min_straight, heading_tol, location_tol, spacing)
-    if len(r) > 0:
-        pts = np.array([[p.x, p.y] for p in r])
+    print(f"min_rad = {min_rad}\nrads = {rads}\nstart_rad = {start_rad}\nmin_straight = {min_straight}")
+    print(f"sx = {sx}\nsy = {sy}\nsh = {sh}\ngx = {gx}\ngy = {gy}\ngh = {gh}")
+    p = shortest_route(s, g, min_rad, min_straight, heading_tol, location_tol, spacing)
+    plt.arrow(s.x, s.y, 5*s.dx, 5*s.dy, head_width=0.5, color='green')
+    plt.arrow(g.x, g.y, 5*g.dx, 5*g.dy, head_width=0.5, color='red')
+    if len(p) > 0:
+        pts = np.asarray([(pt.x, pt.y) for pt in p])
         plt.plot(pts[:,0], pts[:,1])
         plt.scatter(pts[:,0], pts[:,1])
         plt.axis('equal')

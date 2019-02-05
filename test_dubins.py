@@ -1,6 +1,6 @@
 import pytest
 from a_star import Point
-from dubins import Circle, Tangent, tangent, make_circle, S_route, dist
+from heuristic import Circle, Tangent, tangent, make_circle, S_route, dist
 from math import pi, sin, cos, acos
 
 def test_S_route():

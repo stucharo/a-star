@@ -1,5 +1,5 @@
 from math import pi
-from SCS import Point, tangent_points
+from heuristic import Point, tangent_points
 import pytest
 
 tangent_cases = [(Point(5, 0, 0, radius=5), Point(15, 15, 0, radius=-5),

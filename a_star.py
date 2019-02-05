@@ -6,11 +6,14 @@ from scipy.interpolate import griddata
 from queue import PriorityQueue
 import matplotlib.pyplot as plt
 import random
+from heuristic import shortest_route
 
 spacing = 1
 min_straight_length = 10
 bend_radius = [2, 4, 6, 8, 10]
 theta_tol = 3 * pi / 180
+heading_tol = pi/180
+location_tol = 1
 
 class Grid:
     def __init__(self, eastings, northings, costs):
@@ -76,17 +79,16 @@ class Grid:
         return cost
     
     def heuristic_cost(self, p, goal):
-        paths = dubins_paths(p, goal, min(bend_radius), min_straight_length, spacing)
-        paths.sort(key=lambda x: x[0])
-        for path in paths:
-            pts = np.array([(p.x, p.y) for p in path[1]])
+        path = shortest_route(p, goal, min(bend_radius), min_straight_length, heading_tol, location_tol, spacing)
+        if len(path[0]) > 0:
+            pts = np.array([(p.x, p.y) for p in path[0]])
             xs = pts[:,0]
             ys = pts[:,1]
             costs = self.get_cost(xs, ys)
             cost = np.trapz(costs, dx=spacing)
-            if not np.isnan(cost) and not np.isinf(cost):
-                break
-        return cost
+            return cost
+        else:
+            return 1_000_000
 
 class Point:
 

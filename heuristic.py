@@ -4,13 +4,18 @@ from math import pi, sin, cos, asin, acos, atan, atan2
 
 class Point:
 
-    def __init__(self, x, y, heading, cost=0, radius=0):
+    def __init__(self, x, y, heading, cost=0, radius=0, previous=None):
         self.x = x
         self.y = y
         self.dx = cos(heading)
         self.dy = sin(heading)
+        self.heading = heading
         self.cost = cost
         self.radius = radius
+        self.previous = previous
+        
+    def __eq__(self, p):
+        return dist(self, p) < 1 and abs(self.heading - p.heading) < pi/180
 
     def __str__(self):
         return f"({self.x:.2f}, {self.y:.2f}) + ({self.dx:.2f}, {self.dy:.2f})"
@@ -29,8 +34,8 @@ def turn_dir(p1, p2):
         return 1
 
 def get_centre(p):
-    rp = copy_pt(p, 0, 0, direction(p)*pi/2)
-    return copy_pt(rp, abs(p.radius)*rp.dx, abs(p.radius)*rp.dy, 0)
+    rp = copy_pt(p, 0, 0, -1*direction(p)*pi/2)
+    return copy_pt(rp, -1*abs(p.radius)*rp.dx, -1*abs(p.radius)*rp.dy, 0)
 
 def copy_pt(p, dx, dy, dt):
     in_angle = atan2(p.dy, p.dx)
@@ -64,6 +69,9 @@ def S_path(s, g, min_straight, heading_tol, location_tol, spacing=1):
     else:
         return []
 
+def SCS_path(s, g, min_rad, min_straight, spacing):
+    
+
 def SCSCS_path(s, g, min_rad, min_straight, spacing):
     # first, lets find out where we're going
     gbg = copy_pt(g, -min_straight*g.dx, -min_straight*g.dy, 0)
@@ -91,6 +99,8 @@ def SCSCS_path(s, g, min_rad, min_straight, spacing):
     if turn_dir(gbg, t[0]) != direction(gbg):
         gbg.radius *= -1
         t = tangent_points(sbs, gbg)
+    if t is None:
+        return []
     if turn_dir(sbs, t[1]) != direction(sbs):
         gbg.radius *= -1
         t = tangent_points(sbs, gbg)
@@ -172,7 +182,8 @@ def tangent_points(s, g):
         # circle and it's tangent on a circle centred on the second circle, with a radius
         # equal to the difference in radii. This defaults to the centre of the second
         # circle when they are equal radius
-        # da = atan2(gc.y-sc.y, gc.x-sc.x)
+        if abs(abs(s.radius)-abs(g.radius)) > dc:
+            return None
         da = atan2(gc.y-sc.y, gc.x-sc.x) + ds * asin(abs(abs(s.radius)-abs(g.radius))/dc)
         # and the distance
         dt = (dc**2 - abs(abs(s.radius)-abs(g.radius))**2)**0.5
@@ -237,6 +248,17 @@ def bend_points(bs, bg, spacing, leftover=0):
     p = [Point(bc.x+r*cos(t), bc.y+r*sin(t), t + d*pi/2) for t in tl]
     leftover = abs(abs(tg)-abs(normalize_angle(tl[-1]))) * r
     return p, leftover
+
+def bend_point(start, spacing=1, radius=0):
+    s = copy_pt(start,0,0,0)
+    s.radius = radius
+    bc = get_centre(s)
+    dt = spacing / radius
+    new_x = bc.x+abs(radius)*cos(bc.heading+dt)
+    new_y = bc.y+abs(radius)*sin(bc.heading+dt)
+    new_t = s.heading+dt
+    return Point(new_x, new_y, new_t, radius=radius)
+
 
 def angle_between(s, g, d):
     # dot product between [x1, y1] and [x2, y2]

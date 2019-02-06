@@ -26,12 +26,23 @@ class Point:
 def dist(p1, p2):
     return ((p2.x-p1.x)**2 + (p2.y-p1.y)**2)**0.5
 
+def dist2intersect(p1, p2):
+    dv = np.array([[p1.dx, -p2.dx], [p1.dy, -p2.dy]])
+    lv = np.array([p2.x-p1.x, p2.y-p1.y])
+    return np.linalg.solve(dv, lv)
+    
+def angle2intersect(p1, p2):
+    return np.arccos(np.clip(np.dot([p1.dx, p1.dy], [p2.dx, p2.dy]), -1.0, 1.0))
+
 def turn_dir(p1, p2):
     cp = np.cross([p1.dx, p1.dy], [p2.x-p1.x, p2.y-p1.y])
     if cp < 0:
         return -1
     else:
         return 1
+
+def translate_pt(p, t):
+    return copy_pt(p, t*cos(p.heading), t*sin(p.heading), 0)
 
 def get_centre(p):
     rp = copy_pt(p, 0, 0, -1*direction(p)*pi/2)
@@ -70,7 +81,18 @@ def S_path(s, g, min_straight, heading_tol, location_tol, spacing=1):
         return []
 
 def SCS_path(s, g, min_rad, min_straight, spacing):
-    
+    d2i = dist2intersect(s, g)
+    a2i = angle2intersect(s, g)
+    r = min_rad * (a2i/abs(a2i))
+    t2i = min_rad * sin(a2i/2)
+    bs = translate_pt(s, d2i[0]-t2i)
+    bs.radius = r
+    be = translate_pt(g, d2i[1]+t2i)
+    be.radius = r
+    bend = [(bs, be)]
+    return path(s, g, bends=bend, spacing=spacing)
+
+
 
 def SCSCS_path(s, g, min_rad, min_straight, spacing):
     # first, lets find out where we're going
@@ -104,6 +126,8 @@ def SCSCS_path(s, g, min_rad, min_straight, spacing):
     if turn_dir(sbs, t[1]) != direction(sbs):
         gbg.radius *= -1
         t = tangent_points(sbs, gbg)
+    if t is None:
+        return []
     sbg, gbs = t
     if dist(sbg, gbs) > min_straight or (dist(sbg, gbs) == 0 and direction(sbg) == direction(gbs)):
         bends = [(sbs, sbg), (gbs, gbg)]
@@ -124,10 +148,19 @@ def shortest_route(s, g, min_rad, min_straight, heading_tol, location_tol, spaci
     p = S_path(s, g, min_straight, heading_tol, location_tol, spacing)
     if len(p) > 0:
         return p
-    p = SCSCS_path(s, g, min_rad, min_straight, spacing)
-    if len(p) > 0:
-        return p
-    return []
+    scscs_p = SCSCS_path(s, g, min_rad, min_straight, spacing)
+    scs_p = SCS_path(s, g, min_rad, min_straight, spacing)
+    if len(scscs_p) < 0 and len(scs_p) > 0:
+        return scs_p
+    elif len(scs_p) < 0 and len(scscs_p) > 0:
+        return scscs_p
+    elif len(scs_p) > 0 and len(scscs_p) > 0:
+        if len(scs_p) < len(scscs_p):
+            return scs_p
+        else:
+            return scscs_p
+    else:
+        return []
 
 def path(s, g, bends=[], spacing=1):
     """ Construct a path from s to g, at increments of spacing, around

@@ -29,7 +29,10 @@ def dist(p1, p2):
 def dist2intersect(p1, p2):
     dv = np.array([[p1.dx, -p2.dx], [p1.dy, -p2.dy]])
     lv = np.array([p2.x-p1.x, p2.y-p1.y])
-    return np.linalg.solve(dv, lv)
+    try:
+        return np.linalg.solve(dv, lv)
+    except:
+        return np.array([np.inf,np.inf])
     
 def angle2intersect(p1, p2):
     return np.arccos(np.clip(np.dot([p1.dx, p1.dy], [p2.dx, p2.dy]), -1.0, 1.0))
@@ -307,8 +310,90 @@ def angle_between(s, g, d):
             angle += 2 * pi
     return angle
 
+def develop_path(s, g, min_straight_length, min_bend_radius):
+    # Begin with a straight line between start and goal
+    # Check it would arrive in the correct location at the correct heading
+    d = dist(s, g)
+    if dist(translate_pt(s, d), g) < 1 and abs(s.heading-g.heading) < pi/180:
+        # check the path length is valid
+        # if s is on a bend then the length must be greater than min straight length
+        if s.radius == 0 or d > min_straight_length:
+            return [s, g]
+    # if we get this far the straight line won't work. we need to bend the straight line
+    # to the start and/or goal headings and join them with a tangent. 
+    # it might seem obvious which way we have to turn, but because we move the goal by
+    # adding the curve, it can subtly change the optimum direction of the start turn and
+    # vice versa.
+    # lets start by creating a pair of circles at the minimum straight length from the
+    # goal sharing a tangent coincident to the goal heading....
+    goal_turns = [translate_pt(Point(g.x, g.y, g.heading, radius=min_bend_radius),
+                               -min_straight_length),
+                  translate_pt(Point(g.x, g.y, g.heading, radius=-min_bend_radius),
+                               -min_straight_length)]
+    # the start radius is dependent on the start point.
+    # if it is straight then we have 2 options from that point.
+    # if it is curved then we can continue that curve or have 2 minimum straight bends a
+    # minimum straight distance away
+    if s.radius == 0:
+        start_turns = [Point(s.x, s.y, s.heading, radius=min_bend_radius),
+                       Point(s.x, s.y, s.heading, radius=-min_bend_radius)]
+    else:
+        start_turns = [copy_pt(s, 0, 0, 0)]
+        # if the minimum straight requirement means that the two circles pass each other
+        # then they cannot work as the path is crossing itself. This is only really a
+        # concern with the start length, as there is always an option with no straight
+        # length.
+        if dist2intersect(s, g)[0] > min_straight_length:
+            start_turns.extend([translate_pt(Point(s.x, s.y, s.heading, radius=min_bend_radius),
+                                             min_straight_length),
+                                translate_pt(Point(s.x, s.y, s.heading, radius=-min_bend_radius),
+                                             min_straight_length)])
+    # lets evaluate all of the tangents between start and goal arcs
+    tangents = []
+    for st in start_turns:
+        for gt in goal_turns:
+            tp = tangent_points(st, gt)
+            if tp is not None:
+                stt, gtt = tp
+                # the tangent is valid if the turn direction of st is equal to the turn
+                # direction between st and gtt it st is translated to the location of stt
+                # and vice versa. we also need to check the tangent is longer than the
+                # minimum straight length.
+                if ((turn_dir(copy_pt(st, stt.x-st.x, stt.y-st.y, 0), gtt) * st.radius > 0)
+                     and (turn_dir(copy_pt(gt, gtt.x-gt.x, gtt.y-gt.y, 0), stt) * gt.radius > 0)
+                     and dist(stt, gtt) > min_straight_length):
+                    tangents.append((st, stt, gtt, gt))
+    if len(tangents) > 0:
+        # we must have at least 1 turn along each valid path so lets format the path
+        return [(s,)+t+(g,) for t in tangents]
+    return []
+
+def plot_path():
+    import matplotlib.pyplot as plt
+    s = Point(0, 10, pi/4)
+    g = Point(0, 90, -pi/2)
+    msl = 10
+    mbr = 10
+
+    paths = develop_path(s, g, msl, mbr)
+
+    plt.arrow(s.x, s.y, 5*s.dx, 5*s.dy, head_width=0.5, color='green')
+    plt.arrow(g.x, g.y, 5*g.dx, 5*g.dy, head_width=0.5, color='red')
+    
+    if len(paths) > 0:
+        for p in paths:
+            pts = np.asarray([(pt.x, pt.y) for pt in p])
+            plt.plot(pts[:,0], pts[:,1])
+    plt.axis('equal')
+    plt.show()
+
+
+
 if __name__ == '__main__':
     
+    plot_path()
+
+    """
     import matplotlib.pyplot as plt
     import random
     actual = False
@@ -354,3 +439,4 @@ if __name__ == '__main__':
         plt.scatter(pts[:,0], pts[:,1])
     plt.axis('equal')
     plt.show()
+"""

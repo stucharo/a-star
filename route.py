@@ -169,7 +169,7 @@ def get_shortest_route(s, g, min_bend, min_straight, min_straight_end):
     # if the points are too close to fit a mbr in at all then the route returns 0
     # check the distance to intersection between start and end vectors
     d2i = dist2intersect(s, g)
-    if 0 < d2i[0] < np.inf:
+    if 0 < d2i[0] < np.inf and 0 > d2i[1] > -np.inf:
         # the two lines cross and a triangle is possible
         # lets get a vertex at the intersection point
         ip = Point(s.x+d2i[0]*s.dx, s.y+d2i[0]*s.dy)
@@ -238,13 +238,18 @@ def get_length_and_vertices(s, g, min_bend, min_straight, min_straight_end, min_
 
     d = minimize(length, start_vars, args=(s, g, min_bend, min_straight),
                     constraints=cons)
-                    
-    _, b, c, _, e = unpack(s, g, d.x)
-    if dist(b, c) > min_straight:
-        ips = [b, c]
+    if d.success: 
+        l = d.fun    
+        _, b, c, _, e = unpack(s, g, d.x)
+        if dist(b, c) > min_straight:
+            ips = [b, c]
+        else:
+            ips=[b, e, c]
     else:
-        ips=[b, e, c]
-    return d.fun, ips 
+        l = np.inf
+        ips = []
+        
+    return l, ips
 
 def length(vars, s, g, min_bend, min_straight):
     # vars is our minimization variables. these are:
@@ -288,20 +293,58 @@ def unpack(s, g, vars):
     return (a, b, c, d, e)
 
 if __name__ == '__main__':
-    s = Point(0, 0, -3*pi/4, radius=10)
-    g = Point(10, 0, -pi/4)
-    min_bend = 1
-    min_straight = 10
-    min_straight_end = 10
+    import random
+    actual = False
+    if actual:
+        min_rad = 5
+        rads = [-15, -14, -13, -12, -11, -10, -9, -8, -7, -6, -5, 0, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+        start_rad = 9
+        min_straight = 0
+        min_straight_end = 5
+        sx = 68.18919490210035
+        sy = 86.80463589201224
+        sh = 2.4462047964389253
+        gx = 69.52108729899096
+        gy = 55.581589599703904
+        gh = 2.2318007353403067
+    else:
+        max_rad = 15
+        min_rad = random.randint(2, max_rad)
+        rads = []
+        rads.extend(range(-max_rad, -min_rad+1))
+        rads.extend([0])
+        rads.extend(range(min_rad, max_rad+1))
+        start_rad = random.choice(rads)
+        sx = random.uniform(0, 100)
+        sy = random.uniform(0, 100)
+        sh = random.uniform(-pi, pi)
+        gx = random.uniform(0, 100)
+        gy = random.uniform(0, 100)
+        gh = random.uniform(-pi, pi)
+        min_straight = random.randint(0, 10)
+        min_straight_end = random.randint(0, 10)
 
-    r = get_shortest_route(s, g, min_bend, min_straight, min_straight_end)
+    print(f"min_rad = {min_rad}\nrads = {rads}\nstart_rad = {start_rad}\nmin_straight = {min_straight}\nmin_straight_end = {min_straight_end}")
+    print(f"sx = {sx}\nsy = {sy}\nsh = {sh}\ngx = {gx}\ngy = {gy}\ngh = {gh}")
+
+    s = Point(sx, sy, sh, radius=start_rad)
+    g = Point(gx, gy, gh)
+
+    r = get_shortest_route(s, g, min_rad, min_straight, min_straight_end)
 
     pts = [s, g]
     if len(r[1]) > 0:
         pts[1:1] = r[1]
-    ps = np.array([(p.x, p.y) for p in pts])
-    plt.plot(ps[:,0], ps[:,1])
-    plt.axis('equal')
+        ps = np.array([(p.x, p.y) for p in pts])
+        plt.plot(ps[:,0], ps[:,1])
+        plt.axis('equal')
+    else:
+        cx = (sx+gx)/2
+        cy = (sy+gy)/2
+        w = max(abs(gx-sx), abs(gy-sy))
+        plt.axis([cx-w/2-10,cx+w/2+10,cy-w/2-10,cy+w/2+10])
+    plt.arrow(s.x, s.y, 5*s.dx, 5*s.dy, head_width=0.5, color='green')
+    plt.arrow(g.x, g.y, 5*g.dx, 5*g.dy, head_width=0.5, color='red')
     plt.show()
 
 

@@ -180,17 +180,15 @@ def get_shortest_route(s, g, min_bend, min_straight, min_straight_end):
             min_d = 0
         else:
             min_d = min_straight
-        if d2i[0] < min_d + d2t or -d2i[1] < min_straight_end + d2t:
-            # we can't even fit in a minimum bend so return an empty list of bend point
-            return min_length, ips
-        # if we're here we can make a path with at least 1 bend
-        # it's length is...
-        min_length = d2i[0]-d2t + arc_length(s,ip,g,min_bend) + -1*d2i[1] + d2t
-        # and it's tangent points are
-        td = turn_dir(s, g)
-        st = copy_pt(s, s.dx*(d2i[0]-d2t), s.dy*(d2i[0]-d2t), td*pi/2)
-        gt = copy_pt(g, g.dx*(d2i[1]+d2t), g.dy*(d2i[1]+d2t), td*pi/2)
-        ips = [ip]
+        if d2i[0] > min_d + d2t and -d2i[1] > min_straight_end + d2t: 
+            # if we're here we can make a path with at least 1 bend
+            # it's length is...
+            min_length = d2i[0]-d2t + arc_length(s,ip,g,min_bend) + -1*d2i[1] + d2t
+            # and it's tangent points are
+            td = turn_dir(s, g)
+            st = copy_pt(s, s.dx*(d2i[0]-d2t), s.dy*(d2i[0]-d2t), td*pi/2)
+            gt = copy_pt(g, g.dx*(d2i[1]+d2t), g.dy*(d2i[1]+d2t), td*pi/2)
+            ips = [ip]
 
     # we know there is no option for a single bend path if the two vectors don't cross
 
@@ -296,17 +294,17 @@ if __name__ == '__main__':
     import random
     actual = False
     if actual:
-        min_rad = 5
-        rads = [-15, -14, -13, -12, -11, -10, -9, -8, -7, -6, -5, 0, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
-        start_rad = 9
+        min_rad = 9
+        rads = [-15, -14, -13, -12, -11, -10, -9, 0, 9, 10, 11, 12, 13, 14, 15]
+        start_rad = -14
         min_straight = 0
-        min_straight_end = 5
-        sx = 68.18919490210035
-        sy = 86.80463589201224
-        sh = 2.4462047964389253
-        gx = 69.52108729899096
-        gy = 55.581589599703904
-        gh = 2.2318007353403067
+        min_straight_end = 4
+        sx = 47.35609071133033
+        sy = 35.81245589787285
+        sh = -1.1658607445251452
+        gx = 67.31948496519728
+        gy = 10.305954874716871
+        gh = 0.859261004236684
     else:
         max_rad = 15
         min_rad = random.randint(2, max_rad)

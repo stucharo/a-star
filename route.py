@@ -59,47 +59,96 @@ def turn_dir(p1, p2):
         return 1
 
 def length(s, g, ts, tg, x, y, straight, radius):
+    """ Generic length function to calculate path length around max 3 bends
+    """
     a = s
     b = Point(s.x+ts*s.dx, s.y+ts*s.dy)
-    c = Point(g.x-ts*g.dx, g.y-ts*g.dy)
+    c = Point(g.x-tg*g.dx, g.y-tg*g.dy)
     d = g
     e = Point(x, y)
 
     # get distance from vertex to tangent
-    tb = v2t(a,b,e,radius)
-    te = v2t(b,e,c,radius)
-    tc = v2t(e,c,d,radius)
+    tb = v2t(a,b,c,radius)
+    tc = v2t(b,c,d,radius)
 
-    # get arc lengths
-    lab = arc_length(a,b,e,radius)
-    lae = arc_length(b,e,c,radius)
-    lac = arc_length(e,c,d,radius)
+    # total distance
+    if dist(b, c) - tb - tc > straight:
+        lab = arc_length(a,b,c,radius)
+        lac = arc_length(b,c,d,radius) 
+        return dist(a,b) - tb + lab + dist(b,c) - tb - tc + lac + dist(c,d) - tc
+    else:
+        tb = v2t(a,b,e,radius)
+        te = v2t(b,e,c,radius)
+        tc = v2t(e,c,d,radius)
+        lab = arc_length(a,b,e,radius)
+        lae = arc_length(b,e,c,radius)
+        lac = arc_length(e,c,d,radius)
+        return dist(a,b) - tb + lab + dist(b,e) - tb - te + lae + dist(e,c) - te - tc + lac + dist(c,d) - tc
 
-    # we have a number of conditions where we should return infinity
-    # if we start at a bend then we must maintain out minimum straight length
-    if s.radius != 0 and dist(a,b) - tb < straight:
-        return np.inf
-    # if not, we must at least get our curve in!
-    if s.radius == 0 and dist(a,b) - tb < 0:
-        return np.inf
-    # if we have a bend at the start, we must also make sure that the next point is the correct direction
-    if s.radius != 0 and turn_dir(s, e) * s.radius < 0:
-        return np.inf
-    # if e lies on line bc the bc must be longer than the minimum 
-    if angle(b,e,c) == pi and dist(b,c) - tb - tc < straight:
-        return np.inf
-    # the straight distance between c and d must be acceptable
-    if dist(c, d) - tc < straight:
-        return np.inf
-    # point e cannot lie on bc outside of b or c
-    if angle(b,e,c) == 0:
-        return np.inf
-    # distance be and ec must be long enough
-    if angle(b,e,c) < pi and (dist(b,e)-tb-te < straight or dist(e,c)-te-tc < straight):
-        return np.inf
-    # if we've got this far we might be ok...
-    return dist(a,b) - tb + lab + dist(b,e) - tb - te + lae + dist(e,c) - te - tc + lac + dist(c,d) - tc
-    
+# The lengths minimization must be constrained to ensure that the rules
+# of he routing tool are uphelp
+
+def con_dist_ab(vars, g, s, r, min_straight):
+    """ Minimum straight distance from a to b"""
+    a = s
+    b = Point(s.x+vars[0]*s.dx, s.y+vars[0]*s.dy)
+    c = Point(g.x-vars[1]*g.dx, g.y-vars[1]*g.dy)
+    d = g
+    e = Point(vars[2], vars[3])
+    if dist(b,c) - v2t(a,b,c,r) - v2t(b,c,d,r) > min_straight:
+        vt = v2t(a,b,c,r)
+    else:
+        vt = v2t(a,b,e,r)
+    return dist(a,b) - vt - min_straight
+
+def con_dist_be(vars, g, s, r, min_straight):
+    """ Minimum straight distance from b to e (if e is not inline)"""
+    a = s
+    b = Point(s.x+vars[0]*s.dx, s.y+vars[0]*s.dy)
+    c = Point(g.x-vars[1]*g.dx, g.y-vars[1]*g.dy)
+    d = g
+    e = Point(vars[2], vars[3])
+    if angle(b, e, c) < pi and dist(b,c) - v2t(a,b,c,r) - v2t(b,c,d,r) < min_straight:
+        return dist(b, e) - v2t(a,b,e,r) - v2t(b,e,c,r) - min_straight
+    else:
+        return 1
+
+def con_dist_ec(vars, g, s, r, min_straight):
+    """ Minimum straight distance from e to c (if e is not inline)"""
+    a = s
+    b = Point(s.x+vars[0]*s.dx, s.y+vars[0]*s.dy)
+    c = Point(g.x-vars[1]*g.dx, g.y-vars[1]*g.dy)
+    d = g
+    e = Point(vars[2], vars[3])
+    if angle(b, e, c) < pi and dist(b,c) - v2t(a,b,c,r) - v2t(b,c,d,r) < min_straight:
+        return dist(e, c) - v2t(b,e,c,r) - v2t(e,c,d,r) - min_straight
+    else:
+        return 1
+
+def con_dist_cd(vars, g, s, r, min_straight):
+    """ Minimum straight distance from c to d"""
+    a = s
+    b = Point(s.x+vars[0]*s.dx, s.y+vars[0]*s.dy)
+    c = Point(g.x-vars[1]*g.dx, g.y-vars[1]*g.dy)
+    d = g
+    e = Point(vars[2], vars[3])
+    if dist(b,c) - v2t(a,b,c,r) - v2t(b,c,d,r) > min_straight:
+        vt = v2t(b,c,d,r)
+    else:
+        vt = v2t(e,c,d,r)
+    return dist(c, d) - vt - min_straight
+
+def con_angles(vars, g, s, r, min_straight):
+    # constraint to make sure all angles are greater than 0
+    a = s
+    b = Point(s.x+vars[0]*s.dx, s.y+vars[0]*s.dy)
+    c = Point(g.x-vars[1]*g.dx, g.y-vars[1]*g.dy)
+    d = g
+    e = Point(vars[2], vars[3])
+    if dist(b,c) - v2t(a,b,c,r) - v2t(b,c,d,r) > min_straight:
+        return angle(a,b,c) * angle(b,c,d)
+    else:
+        return angle(a,b,e) * angle(b,e,c) * angle(e,c,d)
 
 def route_length(vars, s, g, min_straight, min_bend):
     ts = vars[0]
@@ -110,17 +159,23 @@ def route_length(vars, s, g, min_straight, min_bend):
     return length(s, g, ts, tg, x, y, min_straight, min_bend)
 
 if __name__ == '__main__':
-    s = Point(0, 0, pi/2)
-    g = Point(10, 0, -pi/2)
+    s = Point(0, 0, 3*pi/4)
+    g = Point(10, 0, pi/4)
     ts = 10
     tg = 10
-    x = 5
-    y = 5
+    x = (s.x+g.x)/2
+    y = (s.y+g.y)/2
     straight = 5
-    bend = 2
+    bend = 1
     vars = np.array([ts, tg, x, y])
 
-    n = minimize(route_length, vars, args=(s, g, straight, bend))
+    cons = [{'type': 'ineq', 'fun': con_angles, 'args': (g, s, bend, straight)},
+            {'type': 'ineq', 'fun': con_dist_ab, 'args': (g, s, bend, straight)},
+            {'type': 'ineq', 'fun': con_dist_be, 'args': (g, s, bend, straight)},
+            {'type': 'ineq', 'fun': con_dist_ec, 'args': (g, s, bend, straight)},
+            {'type': 'ineq', 'fun': con_dist_cd, 'args': (g, s, bend, straight)}]
+
+    n = minimize(route_length, vars, args=(s, g, straight, bend), constraints=cons)
     print(n)
 
 

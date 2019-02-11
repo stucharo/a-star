@@ -88,7 +88,7 @@ def con_dist_ab(vars, g, s, start_r, r, min_straight_start, min_straight):
         vt = v2t(a,b,c,start_r)
     else:
         vt = v2t(a,b,e,start_r)
-    return dist(a,b) - vt - min_straight_start
+    return round(dist(a,b) - vt - min_straight_start, 5)
 
 def con_dist_be(vars, g, s, r, min_straight):
     """ Minimum straight distance from b to e (if e is not inline)"""
@@ -196,43 +196,54 @@ def get_shortest_route(s, g, min_bend, min_straight, min_straight_end):
 
     # can we fit a 2 bend path in?
     # there is 3 options depending on whether the start is on a bend
-    # first, lets make initial guesses at where a third point might lie
- 
-    d, ip = get_length_and_vertices(s, g, min_bend, min_straight, min_straight_end, 0)
-    if d < min_length:
-        min_length = d
-        ips = ip
     
-    if s.radius != 0:
-        # or move a minimum length length away
-        d, ip = get_length_and_vertices(s, g, min_bend, min_straight, min_straight_end)
+    # we always have an option to turn immediately, although it might be in a forced
+    # direction if the previous section was on a curve
 
+    # 1. Last point was straight:
+    #    start straight > 0;
+    #    any start turn direction
+    #
+    # 2. Last point on a bend:
+    #    a. turn straight away
+    #       start straight = 0
+    #       turn dir * start radius > 0
+    #    b. go minimum straight length
+    #       start straight > min straight
+    #       any turn dir
+
+    if s.radius == 0:
+        d, ip = get_length_and_vertices(s, g, min_bend, min_straight, min_straight_end, 0, 'ineq')
+        if d < min_length:
+            min_length = d
+            ips = ip
+    else:
+        d, ip = get_length_and_vertices(s, g, min_bend, min_straight, min_straight_end, 0, 'eq')
+        if d < min_length:
+            min_length = d
+            ips = ip
+
+        d, ip = get_length_and_vertices(s, g, min_bend, min_straight, min_straight_end, min_straight, 'ineq')
         if d < min_length:
             min_length = d
             ips = ip
     
-    # convert
-
     return min_length, ips
 
-def get_length_and_vertices(s, g, min_bend, min_straight, min_straight_end, min_straight_start=None):
+def get_length_and_vertices(s, g, min_bend, min_straight, min_straight_end, min_straight_start, min_start_con):
 
     cons = [{'type': 'ineq', 'fun': con_angles, 'args': (g, s, min_bend, min_straight)},
             {'type': 'ineq', 'fun': con_dist_be, 'args': (g, s, min_bend, min_straight)},
             {'type': 'ineq', 'fun': con_dist_ec, 'args': (g, s, min_bend, min_straight)},
             {'type': 'ineq', 'fun': con_dist_cd, 'args': (g, s, min_bend, min_straight_end, min_straight)}]
 
-    
-    if min_straight_start is None:
-        min_straight_start = min_straight
-
     if s.radius == 0:
         cons.extend([{'type': 'ineq', 'fun': con_dist_ab, 'args': (g, s, min_bend, min_bend, min_straight_start, min_straight)}])
     else:
-        cons.extend([{'type': 'eq', 'fun': con_dist_ab, 'args': (g, s, abs(s.radius), min_bend, 0, min_straight)},
-                     {'type': 'eq', 'fun': con_turn_dir_b, 'args': (g, s, s.radius, min_straight)}])
+        cons.extend([{'type': min_start_con, 'fun': con_dist_ab, 'args': (g, s, abs(s.radius), min_bend, 0, min_straight)},
+                     {'type': 'ineq', 'fun': con_turn_dir_b, 'args': (g, s, s.radius, min_straight)}])
     
-    start_vars = np.array([2*min_straight_start+1, 2*min_straight_end+1, (s.x+g.x)/2, (s.y+g.y)/2])
+    start_vars = np.array([min_straight_start+1, min_straight_end+1, (s.x+g.x)/2, (s.y+g.y)/2])
 
     d = minimize(length, start_vars, args=(s, g, min_bend, min_straight),
                     constraints=cons)
@@ -292,19 +303,19 @@ def unpack(s, g, vars):
 
 if __name__ == '__main__':
     import random
-    actual = False
+    actual = True
     if actual:
-        min_rad = 9
-        rads = [-15, -14, -13, -12, -11, -10, -9, 0, 9, 10, 11, 12, 13, 14, 15]
-        start_rad = -14
-        min_straight = 0
+        min_rad = 2
+        rads = [-15, -14, -13, -12, -11, -10, -9, -8, -7, -6, -5, -4, -3, -2, 0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+        start_rad = 7
+        min_straight = 6
         min_straight_end = 4
-        sx = 47.35609071133033
-        sy = 35.81245589787285
-        sh = -1.1658607445251452
-        gx = 67.31948496519728
-        gy = 10.305954874716871
-        gh = 0.859261004236684
+        sx = 70.6839932750013
+        sy = 32.94471202332873
+        sh = 0.6456475640653694
+        gx = 13.396938313150086
+        gy = 38.18447479042187
+        gh = -0.12310970130474308
     else:
         max_rad = 15
         min_rad = random.randint(2, max_rad)

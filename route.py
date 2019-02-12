@@ -192,8 +192,9 @@ def get_shortest_route(s, g, min_bend, min_straight, min_straight_end):
 
     # we know there is no option for a single bend path if the two vectors don't cross
 
-    # now we can investigate 2 and 3 bend options
-
+    # now we can investigate 2 and 3 bend options; however, there's no real point in
+    # looking at 3 bend paths, because that can't ever be a good path.
+    
     # can we fit a 2 bend path in?
     # there is 3 options depending on whether the start is on a bend
     

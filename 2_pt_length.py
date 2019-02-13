@@ -88,20 +88,20 @@ def get_shortest_route(s, g, min_bend, min_straight):
     #     min_length = d
     #     ips = ip
 
-    d, ip = get_length_and_vertices(s, g, min_bend, min_straight, 'eq', 0)
+    d, ip = get_length_and_vertices(s, g, min_bend, min_straight, 'eq', 0, 4*min_straight)
     if d < min_length:
         min_length = d
         ips = ip
     
     return min_length, ips
 
-def get_length_and_vertices(s, g, min_bend, min_straight, con, start_straight, start_radius=None):
+def get_length_and_vertices(s, g, min_bend, min_straight, con, start_straight, min_straight_end, start_radius=None):
 
     v = [min_straight, min_straight]
 
     cons = [{'type': con, 'fun': con_len_ab, 'args': (s, g, min_bend, start_straight)},
             {'type': 'ineq', 'fun': con_len_bc, 'args': (s, g, min_bend, min_straight)},
-            {'type': 'ineq', 'fun': con_len_cd, 'args': (s, g, min_bend, min_straight)}]
+            {'type': 'ineq', 'fun': con_len_cd, 'args': (s, g, min_bend, min_straight_end)}]
     
     d = minimize(length, v, args=(s,g,min_bend, min_straight), constraints=cons)
 
@@ -122,10 +122,10 @@ def con_len_bc(vars, s, g, r, min_straight):
     tc = v2t(b,c,d,r)
     return dist(b,c) - tb - tc - min_straight
 
-def con_len_cd(vars, s, g, r, min_straight):
+def con_len_cd(vars, s, g, r, min_straight_end):
     _, b, c, d = unpack(vars, s, g)
     t = v2t(b,c,d,r)
-    return vars[1] - t - min_straight
+    return vars[1] - t - min_straight_end
 
 def length(vars, s, g, min_bend, min_straight):
     # vars is our minimization variables. these are:

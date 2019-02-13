@@ -1,60 +1,22 @@
 import numpy as np
-from math import pi, sin, cos, asin, acos, atan, atan2
+from scipy.optimize import minimize
+from math import pi, sin, cos, asin, acos, atan, atan2, tan
+import matplotlib.pyplot as plt
 
+class Point():
 
-class Point:
-
-    def __init__(self, x, y, heading, cost=0, radius=0, previous=None):
+    def __init__(self, x, y, heading=0, radius=0):
         self.x = x
         self.y = y
-        self.dx = cos(heading)
-        self.dy = sin(heading)
-        self.heading = heading
-        self.cost = cost
+        self.dx = normalize_angle(cos(heading))
+        self.dy = normalize_angle(sin(heading))
         self.radius = radius
-        self.previous = previous
-        
-    def __eq__(self, p):
-        return dist(self, p) < 1 and abs(self.heading - p.heading) < pi/180
 
     def __str__(self):
         return f"({self.x:.2f}, {self.y:.2f}) + ({self.dx:.2f}, {self.dy:.2f})"
 
     def __repr__(self):
         return f"({self.x:.2f}, {self.y:.2f}) + ({self.dx:.2f}, {self.dy:.2f})"
-
-def dist(p1, p2):
-    return ((p2.x-p1.x)**2 + (p2.y-p1.y)**2)**0.5
-
-def dist2intersect(p1, p2):
-    dv = np.array([[p1.dx, -p2.dx], [p1.dy, -p2.dy]])
-    lv = np.array([p2.x-p1.x, p2.y-p1.y])
-    try:
-        return np.linalg.solve(dv, lv)
-    except:
-        return np.array([np.inf,np.inf])
-    
-def angle2intersect(p1, p2):
-    return np.arccos(np.clip(np.dot([p1.dx, p1.dy], [p2.dx, p2.dy]), -1.0, 1.0))
-
-def turn_dir(p1, p2):
-    cp = np.cross([p1.dx, p1.dy], [p2.x-p1.x, p2.y-p1.y])
-    if cp < 0:
-        return -1
-    else:
-        return 1
-
-def translate_pt(p, t):
-    return copy_pt(p, t*cos(p.heading), t*sin(p.heading), 0)
-
-def get_centre(p):
-    rp = copy_pt(p, 0, 0, -1*direction(p)*pi/2)
-    return copy_pt(rp, -1*abs(p.radius)*rp.dx, -1*abs(p.radius)*rp.dy, 0)
-
-def copy_pt(p, dx, dy, dt):
-    in_angle = atan2(p.dy, p.dx)
-    new_heading = normalize_angle(in_angle + dt)
-    return Point(p.x+dx, p.y+dy, new_heading, radius=p.radius)
 
 def normalize_angle(a):
     """ Maintain angle between in range -pi <= a < pi """
@@ -65,105 +27,223 @@ def normalize_angle(a):
     else:
         return a
 
-def S_path(s, g, min_straight, heading_tol, location_tol, spacing=1):
-    # are they colinear
-    d = dist(s, g)
-    if (abs(atan2(g.dy, g.dx) - atan2(s.dy, s.dx)) <= heading_tol
-        and dist(copy_pt(s, d*s.dx, d*s.dy, 0), g) <= location_tol):
-        # and far enough apart
-        if s.radius == 0:
-            # they are always at least the minimum straight length apart
-            return path(s, g, spacing=spacing)
-        else:
-            # they have to be the minimum length apart
-            if d > min_straight:
-                return path(s, g, spacing=spacing)
-            else:
-                return []
-    else:
-        return []
+def dist2intersect(p1, p2):
+    dv = np.array([[p1.dx, -p2.dx], [p1.dy, -p2.dy]])
+    lv = np.array([p2.x-p1.x, p2.y-p1.y])
+    try:
+        return np.linalg.solve(dv, lv)
+    except:
+        return np.array([np.inf,np.inf])
+ 
+def dist(p1, p2):
+    return ((p2.x-p1.x)**2+(p2.y-p1.y)**2)**0.5
 
-def SCS_path(s, g, min_rad, min_straight, spacing):
-    d2i = dist2intersect(s, g)
-    a2i = angle2intersect(s, g)
-    r = min_rad * (a2i/abs(a2i))
-    t2i = min_rad * sin(a2i/2)
-    bs = translate_pt(s, d2i[0]-t2i)
-    bs.radius = r
-    be = translate_pt(g, d2i[1]+t2i)
-    be.radius = r
-    bend = [(bs, be)]
-    return path(s, g, bends=bend, spacing=spacing)
-
-
-
-def SCSCS_path(s, g, min_rad, min_straight, spacing):
-    # first, lets find out where we're going
-    gbg = copy_pt(g, -min_straight*g.dx, -min_straight*g.dy, 0)
-    # we're really interested in the relative locations of the first bend start and the last bend end
-    if s.radius == 0:
-        # we're not on a bend so we can start a new bend here
-        sbs = copy_pt(s, 0, 0, 0)
-    elif s.radius * turn_dir(s, g) > 0:
-        # we're on a bend going the right way
-        sbs = copy_pt(s, 0, 0, 0)
-        sbs.radius = s.radius
-    else:
-        # we're on a bend going the wrong way.
-        # to avoid crossing our old path we must go the minimum straight distance and start a bend there
-        sbs = copy_pt(s, min_straight*s.dx, min_straight*s.dy, 0)
-        sbs.radius = -1 * direction(s) * min_rad
-    if sbs.radius == 0:
-        # we need to set it to minimum bend radius but we must calculate the direction to
-        # give it the correct sign
-        sbs.radius = turn_dir(sbs, gbg) * min_rad
-    gbg.radius = turn_dir(gbg, sbs) * min_rad
-    t = tangent_points(sbs, gbg)
-    if t is None:
-        return []
-    if turn_dir(gbg, t[0]) != direction(gbg):
-        gbg.radius *= -1
-        t = tangent_points(sbs, gbg)
-    if t is None:
-        return []
-    if turn_dir(sbs, t[1]) != direction(sbs):
-        gbg.radius *= -1
-        t = tangent_points(sbs, gbg)
-    if t is None:
-        return []
-    sbg, gbs = t
-    if dist(sbg, gbs) > min_straight or (dist(sbg, gbs) == 0 and direction(sbg) == direction(gbs)):
-        bends = [(sbs, sbg), (gbs, gbg)]
-        return path(s, g, bends=bends, spacing=spacing)
-    else:
-        return []
-
-def shortest_route(s, g, min_rad, min_straight, heading_tol, location_tol, spacing):
-    """ Route options:
-        1. We can make it in a straight line.
-        2. Stright - curve - straight - curve - striahgt cuts the 
-           corner, but only works if we can fit the minimum straight
-           lengths.
-        3. Straight - curve - straight works if we we can fit the 
-           minimum straight lengths
-        4. 
+def angle(p1, p2, p3):
+    """ Angle between p1 -> p2 -> p3
+    Except clause to catch case when all 3 points are on the same line.
+    This returns pi e.g. angle of 180 degress
     """
-    p = S_path(s, g, min_straight, heading_tol, location_tol, spacing)
-    if len(p) > 0:
-        return p
-    scscs_p = SCSCS_path(s, g, min_rad, min_straight, spacing)
-    scs_p = SCS_path(s, g, min_rad, min_straight, spacing)
-    if len(scscs_p) < 0 and len(scs_p) > 0:
-        return scs_p
-    elif len(scs_p) < 0 and len(scscs_p) > 0:
-        return scscs_p
-    elif len(scs_p) > 0 and len(scscs_p) > 0:
-        if len(scs_p) < len(scscs_p):
-            return scs_p
+    try:
+        return acos((dist(p2,p3)**2 + dist(p1,p2)**2 - dist(p1,p3)**2)
+                    / (2 * dist(p2,p3) * dist(p1,p2)))
+    except:
+        return pi
+
+def v2t(p1, p2, p3, r):
+    """ Distance from vertex `p2` to the tangent of circle radius `r`
+    through line p1 -> p2 -> p3.
+    """
+    a = angle(p1, p2, p3)
+    if a == pi:
+        return 0
+    else:
+        return r / tan(a / 2)
+
+def arc_length(p1, p2, p3, r):
+    a = angle(p1, p2, p3)
+    if a == pi:
+        return 0
+    else:
+        return a * r
+
+def turn_dir(p1, p2):
+    cp = np.cross([p1.dx, p1.dy], [p2.x-p1.x, p2.y-p1.y])
+    if cp < 0:
+        return -1
+    else:
+        return 1
+
+def copy_pt(p, dx, dy, dt):
+    in_angle = atan2(p.dy, p.dx)
+    new_heading = normalize_angle(in_angle + dt)
+    return Point(p.x+dx, p.y+dy, new_heading, radius=p.radius)
+
+def get_shortest_path(s, g, min_bend, min_straight, min_straight_end, heading_tol, location_tol, spacing=1):
+
+    min_length = np.inf
+    bs = []
+
+    dsg = dist(s,g)
+    sp = copy_pt(s, s.dx*dsg, s.dy*dsg,0)
+    if abs(s.heading-g.heading) < heading_tol and dist(sp, g) < location_tol:
+        return path(s, g, spacing=spacing)
+
+    d2i = dist2intersect(s, g)
+    if 0 < d2i[0] < 10*min_straight and 0 > d2i[1] > -10*min_straight_end:
+        # the two lines cross and a triangle is possible
+        # lets get a vertex at the intersection point
+        ip = Point(s.x+d2i[0]*s.dx, s.y+d2i[0]*s.dy)
+        # and the distance between the ip and tp for a minimum radius bend
+        d2t = v2t(s, ip, g, min_bend)
+        # the minimum required distance depends on whether the start is on a bend
+        if s.radius == 0:
+            min_d = 0
         else:
-            return scscs_p
+            min_d = min_straight
+        if d2i[0] > min_d + d2t and -d2i[1] > min_straight_end + d2t: 
+            # if we're here we can make a path with at least 1 bend
+            # it's length is...
+            min_length = d2i[0]-d2t + arc_length(s,ip,g,min_bend) + -1*d2i[1] + d2t
+            # and it's tangent points are
+            bs = generate_bends([s, ip, g], min_bend)
+            
+    if s.radius != 0:
+        d, bends = get_length_and_bends(s, g, min_bend, min_straight, 'ineq', min_straight, min_straight_end)
+        if d < min_length:
+            min_length = d
+            bs = bends
+            
+        d, bends = get_length_and_bends(s, g, min_bend, min_straight, 'eq', 0, min_straight_end, s.radius)
+        if d < min_length:
+            min_length = d
+            bs = bends
+    else:
+        d, bends = get_length_and_bends(s, g, min_bend, min_straight, 'ineq', 0, min_straight_end)
+        if d < min_length:
+            min_length = d
+            bs = bends
+    if min_length < np.inf:
+        return path(s, g, bs, spacing)
     else:
         return []
+
+def get_length_and_bends(s, g, min_bend, min_straight, con, start_straight, min_straight_end, start_radius=None):
+
+    v = [min_straight, min_straight]
+
+    if start_radius is not None:
+        s_bend = abs(start_radius)
+    else:
+        s_bend = min_bend
+
+    cons = [{'type': con, 'fun': con_len_ab, 'args': (s, g, s_bend, start_straight)},
+            {'type': 'ineq', 'fun': con_len_bc, 'args': (s, g, min_bend, min_straight)},
+            {'type': 'ineq', 'fun': con_len_cd, 'args': (s, g, min_bend, min_straight_end)}]
+        
+    if start_radius is not None:
+        cons.extend([{'type': 'ineq', 'fun': con_turn_dir_b, 'args': (s, g, start_radius)}])
+    
+    d = minimize(length, v, args=(s,g,min_bend, min_straight), constraints=cons)
+
+    if d.success:
+        pts = [s, g]
+        pts[1:1] = [copy_pt(s,s.dx*d.x[0],s.dy*d.x[0],0),
+                   copy_pt(g,g.dx*-d.x[1],g.dy*-d.x[1],0)]
+        return d.fun, generate_bends(pts, min_bend, s_bend)
+    else:
+        return np.inf, []
+
+def con_len_ab(vars, s, g, r, min_straight):
+    a, b, c, _ = unpack(vars, s, g)
+    t = v2t(a,b,c,r)
+    return vars[0] - t - min_straight
+
+def con_len_bc(vars, s, g, r, min_straight):
+    a, b, c, d = unpack(vars, s, g)
+    tb = v2t(a,b,c,r)
+    tc = v2t(b,c,d,r)
+    return dist(b,c) - tb - tc - min_straight
+
+def con_len_cd(vars, s, g, r, min_straight_end):
+    _, b, c, d = unpack(vars, s, g)
+    t = v2t(b,c,d,r)
+    return vars[1] - t - min_straight_end
+
+def con_turn_dir_b(vars, s, g, start_radius):
+    a, b, c, _ = unpack(vars, s, g)
+    return turn_dir(a, c) * start_radius
+
+def length(vars, s, g, min_bend, min_straight):
+    # vars is our minimization variables. these are:
+    # vars[0] -> ts
+    # vars[1] -> tg
+    
+    a, b, c, d = unpack(vars, s, g)
+
+    # get distance from vertex to tangent
+    tb = v2t(a,b,c,min_bend)
+    tc = v2t(b,c,d,min_bend)
+
+    lab = arc_length(a,b,c,min_bend)
+    lac = arc_length(b,c,d,min_bend) 
+
+    return dist(a,b) - tb + lab + dist(b,c) - tb - tc + lac + dist(c,d) - tc
+
+def unpack(vars, s, g):
+    a = s
+    b = Point(s.x+vars[0]*s.dx, s.y+vars[0]*s.dy)
+    c = Point(g.x-vars[1]*g.dx, g.y-vars[1]*g.dy)
+    d = g
+    return (a, b, c, d)
+
+def graph(path):
+
+    if len(path) > 1:
+        ps = np.array([(p.x, p.y) for p in path])
+        plt.plot(ps[:,0], ps[:,1])
+        plt.axis('equal')
+    else:
+        cx = (s.x+g.x)/2
+        cy = (s.y+g.y)/2
+        w = max(abs(g.x-s.x), abs(g.y-s.y))
+        plt.axis([cx-w/2-10,cx+w/2+10,cy-w/2-10,cy+w/2+10])
+    plt.arrow(s.x, s.y, 5*s.dx, 5*s.dy, head_width=0.5, color='green')
+    plt.arrow(g.x, g.y, 5*g.dx, 5*g.dy, head_width=0.5, color='red')
+    plt.show()
+
+def generate_bends(pts, min_bend, start_bend=None):
+    bends = []
+    for i in range(1,len(pts)-1):
+        if i == 1:
+            if start_bend is None:
+                r = min_bend
+            else:
+                r = start_bend
+        else:
+            r = min_bend
+
+        t = v2t(pts[i-1], pts[i], pts[i+1],r)
+        sp = pts[i-1]
+        d1 = dist(pts[i-1], pts[i])
+        d2 = dist(pts[i], pts[i+1])
+
+        bs = copy_pt(sp, sp.dx*(d1-t), sp.dy*(d1-t), 0)
+        bs = Point(pts[i-1].x, pts[i-1].y)
+        bs.dx = (pts[i].x - pts[i-1].x) / d1
+        bs.dy = (pts[i].y - pts[i-1].y) / d1
+        bs.x += bs.dx * (d1 - t)
+        bs.y += bs.dy * (d1 - t)
+        d = turn_dir(bs, pts[i+1])
+        bs.radius = d*r
+        bg = Point(pts[i].x, pts[i].y)
+        bg.dx = (pts[i+1].x - pts[i].x) / d2
+        bg.dy = (pts[i+1].y - pts[i].y) / d2
+        bg.x += bg.dx * t
+        bg.y += bg.dy * t
+        bg.radius = d*r
+
+        bends.append((bs, bg))
+    return bends
 
 def path(s, g, bends=[], spacing=1):
     """ Construct a path from s to g, at increments of spacing, around
@@ -205,48 +285,6 @@ def path(s, g, bends=[], spacing=1):
             p.extend(straight_points(bg, g, spacing, lo)[0])
         return p
 
-def tangent_points(s, g):
-    sc = get_centre(s)
-    gc = get_centre(g)
-    # distance between arc centres
-    dc = dist(sc, gc)
-    ds = direction(s)
-    dg = direction(g)
-    if ds * dg > 0:
-        # if the turn directions are both the same then we're looking for an outer tangent
-        # so the heading of the tangent is parallel to the line between the centre of 1
-        # circle and it's tangent on a circle centred on the second circle, with a radius
-        # equal to the difference in radii. This defaults to the centre of the second
-        # circle when they are equal radius
-        if abs(abs(s.radius)-abs(g.radius)) > dc:
-            return None
-        da = atan2(gc.y-sc.y, gc.x-sc.x) + ds * asin(abs(abs(s.radius)-abs(g.radius))/dc)
-        # and the distance
-        dt = (dc**2 - abs(abs(s.radius)-abs(g.radius))**2)**0.5
-    else:
-        # get the angle of the tangent line
-        if -1 <= (abs(s.radius)+abs(g.radius))/dc <= 1:
-            da = atan2(gc.y-sc.y, gc.x-sc.x) + ds * asin((abs(s.radius)+abs(g.radius))/dc)
-            # and the distance
-            dt = (dc**2 - (abs(s.radius)+abs(g.radius))**2)**0.5
-        else:
-            # we can't find an inner tangent for two circles that overlap
-            return None
-    da = normalize_angle(da)
-    # normal vector points from centre of sc to tp
-    vn = normalize_angle(da - ds * pi / 2)
-    # start point is s_rad along vn from sc, heading is da
-    ts = Point(sc.x+abs(s.radius)*cos(vn), sc.y+abs(s.radius)*sin(vn), da)
-    ts.radius = s.radius
-    # end point is dt along da from start point, heading is da
-    te = Point(ts.x+dt*cos(da), ts.y+dt*sin(da), da)
-    te.radius = g.radius
-
-    return ts, te
-
-def direction(p):
-    return p.radius / abs(p.radius)
-
 def straight_points(s, g, spacing, leftover=0):
     """ Generate a list of points along a straight line between the `s`
     and `g` Points. Note that this assumes the previous section 
@@ -285,16 +323,12 @@ def bend_points(bs, bg, spacing, leftover=0):
     leftover = abs(abs(tg)-abs(normalize_angle(tl[-1]))) * r
     return p, leftover
 
-def bend_point(start, spacing=1, radius=0):
-    s = copy_pt(start,0,0,0)
-    s.radius = radius
-    bc = get_centre(s)
-    dt = spacing / radius
-    new_x = bc.x+abs(radius)*cos(bc.heading+dt)
-    new_y = bc.y+abs(radius)*sin(bc.heading+dt)
-    new_t = s.heading+dt
-    return Point(new_x, new_y, new_t, radius=radius)
+def get_centre(p):
+    rp = copy_pt(p, 0, 0, -1*direction(p)*pi/2)
+    return copy_pt(rp, -1*abs(p.radius)*rp.dx, -1*abs(p.radius)*rp.dy, 0)
 
+def direction(p):
+    return p.radius / abs(p.radius)
 
 def angle_between(s, g, d):
     # dot product between [x1, y1] and [x2, y2]
@@ -310,133 +344,8 @@ def angle_between(s, g, d):
             angle += 2 * pi
     return angle
 
-def develop_path(s, g, min_straight_length, min_bend_radius):
-    # Begin with a straight line between start and goal
-    # Check it would arrive in the correct location at the correct heading
-    d = dist(s, g)
-    if dist(translate_pt(s, d), g) < 1 and abs(s.heading-g.heading) < pi/180:
-        # check the path length is valid
-        # if s is on a bend then the length must be greater than min straight length
-        if s.radius == 0 or d > min_straight_length:
-            return [s, g]
-    # if we get this far the straight line won't work. we need to bend the straight line
-    # to the start and/or goal headings and join them with a tangent. 
-    # it might seem obvious which way we have to turn, but because we move the goal by
-    # adding the curve, it can subtly change the optimum direction of the start turn and
-    # vice versa.
-    # lets start by creating a pair of circles at the minimum straight length from the
-    # goal sharing a tangent coincident to the goal heading....
-    goal_turns = [translate_pt(Point(g.x, g.y, g.heading, radius=min_bend_radius),
-                               -min_straight_length),
-                  translate_pt(Point(g.x, g.y, g.heading, radius=-min_bend_radius),
-                               -min_straight_length)]
-    # the start radius is dependent on the start point.
-    # if it is straight then we have 2 options from that point.
-    # if it is curved then we can continue that curve or have 2 minimum straight bends a
-    # minimum straight distance away
-    if s.radius == 0:
-        start_turns = [Point(s.x, s.y, s.heading, radius=min_bend_radius),
-                       Point(s.x, s.y, s.heading, radius=-min_bend_radius)]
-    else:
-        start_turns = [copy_pt(s, 0, 0, 0)]
-        # if the minimum straight requirement means that the two circles pass each other
-        # then they cannot work as the path is crossing itself. This is only really a
-        # concern with the start length, as there is always an option with no straight
-        # length.
-        if dist2intersect(s, g)[0] > min_straight_length:
-            start_turns.extend([translate_pt(Point(s.x, s.y, s.heading, radius=min_bend_radius),
-                                             min_straight_length),
-                                translate_pt(Point(s.x, s.y, s.heading, radius=-min_bend_radius),
-                                             min_straight_length)])
-    # lets evaluate all of the tangents between start and goal arcs
-    tangents = []
-    for st in start_turns:
-        for gt in goal_turns:
-            tp = tangent_points(st, gt)
-            if tp is not None:
-                stt, gtt = tp
-                # the tangent is valid if the turn direction of st is equal to the turn
-                # direction between st and gtt it st is translated to the location of stt
-                # and vice versa. we also need to check the tangent is longer than the
-                # minimum straight length.
-                if ((turn_dir(copy_pt(st, stt.x-st.x, stt.y-st.y, 0), gtt) * st.radius > 0)
-                     and (turn_dir(copy_pt(gt, gtt.x-gt.x, gtt.y-gt.y, 0), stt) * gt.radius > 0)
-                     and dist(stt, gtt) > min_straight_length):
-                    tangents.append((st, stt, gtt, gt))
-    if len(tangents) > 0:
-        # we must have at least 1 turn along each valid path so lets format the path
-        return [(s,)+t+(g,) for t in tangents]
-    return []
-
-def plot_path():
-    import matplotlib.pyplot as plt
-    s = Point(0, 10, pi/4)
-    g = Point(0, 90, -pi/2)
-    msl = 10
-    mbr = 10
-
-    paths = develop_path(s, g, msl, mbr)
-
-    plt.arrow(s.x, s.y, 5*s.dx, 5*s.dy, head_width=0.5, color='green')
-    plt.arrow(g.x, g.y, 5*g.dx, 5*g.dy, head_width=0.5, color='red')
-    
-    if len(paths) > 0:
-        for p in paths:
-            pts = np.asarray([(pt.x, pt.y) for pt in p])
-            plt.plot(pts[:,0], pts[:,1])
-    plt.axis('equal')
-    plt.show()
-
-
-
 if __name__ == '__main__':
-    
-    plot_path()
+    s = Point(0,0,5*pi/12,radius=-5)
+    g = Point(100, 0, -5*pi/12)
 
-    """
-    import matplotlib.pyplot as plt
-    import random
-    actual = False
-    if actual:
-        min_rad = 12
-        rads = [-15, -14, -13, -12, 0, 12, 13, 14, 15]
-        start_rad = 0
-        min_straight = 10
-        sx = 24.740583304172137
-        sy = 50.36969667507735
-        sh = 2.840395189256073
-        gx = 13.226612622299294
-        gy = 58.99167386202944
-        gh = -2.771550305600809
-    else:
-        max_rad = 15
-        min_rad = random.randint(2, max_rad)
-        rads = []
-        rads.extend(range(-max_rad, -min_rad+1))
-        rads.extend([0])
-        rads.extend(range(min_rad, max_rad+1))
-        start_rad = random.choice(rads)
-        sx = random.uniform(0, 100)
-        sy = random.uniform(0, 100)
-        sh = random.uniform(-pi, pi)
-        gx = random.uniform(0, 100)
-        gy = random.uniform(0, 100)
-        gh = random.uniform(-pi, pi)
-        min_straight = random.randint(0, 10)
-    s = Point(sx, sy, sh, radius=start_rad)
-    g = Point(gx, gy, gh)
-    heading_tol = pi/180
-    location_tol = 1
-    spacing = 1
-    print(f"min_rad = {min_rad}\nrads = {rads}\nstart_rad = {start_rad}\nmin_straight = {min_straight}")
-    print(f"sx = {sx}\nsy = {sy}\nsh = {sh}\ngx = {gx}\ngy = {gy}\ngh = {gh}")
-    p = shortest_route(s, g, min_rad, min_straight, heading_tol, location_tol, spacing)
-    plt.arrow(s.x, s.y, 5*s.dx, 5*s.dy, head_width=0.5, color='green')
-    plt.arrow(g.x, g.y, 5*g.dx, 5*g.dy, head_width=0.5, color='red')
-    if len(p) > 0:
-        pts = np.asarray([(pt.x, pt.y) for pt in p])
-        plt.plot(pts[:,0], pts[:,1])
-        plt.scatter(pts[:,0], pts[:,1])
-    plt.axis('equal')
-    plt.show()
-"""
+    graph(get_shortest_path(s, g, 10, 20, 30, 1))

@@ -6,7 +6,7 @@ from scipy.interpolate import griddata
 from queue import PriorityQueue
 import matplotlib.pyplot as plt
 import random
-from heuristic import Point, copy_pt, dist, shortest_route, bend_point, direction
+from heuristic import Point, copy_pt, dist, get_shortest_path, bend_point, direction
 
 spacing = 1
 min_straight_length = 5
@@ -61,7 +61,7 @@ def heuristic_cost(self, p, goal):
     while cur_p.previous is not None:
         pts.append((p.previous.x, p.previous.y))
         cur_p = cur_p.previous
-    heuristic_path = shortest_route(p, goal, min(bend_radius), min_straight_length, heading_tol, location_tol, spacing)
+    heuristic_path = get_shortest_path(p, goal, min(bend_radius), min_straight_length, min_straight_length, heading_tol, location_tol, spacing)
     #plot(pts + [(p.x, p.y) for p in heuristic_path])
     if len(heuristic_path) > 0:
         pts = np.array([(p.x, p.y) for p in heuristic_path])
@@ -69,11 +69,11 @@ def heuristic_cost(self, p, goal):
         ys = pts[:,1]
         costs = self.get_cost(xs, ys)
         if np.isnan(costs.max()) or np.isnan(costs.min()):
-            return 1_000_000
+            return 100_000_000
         cost = np.trapz(costs, dx=spacing)
         return cost
     else:
-        return 1_000_000
+        return 100_000_000
 
 def plot(path):
     p = np.asarray(path)
@@ -125,15 +125,17 @@ def a_star_pipe(graph, start, goal):
 
             if neighbour == goal:
                 return neighbour
-            est_cost = neighbour.cost + heuristic_cost(graph, neighbour, goal)
-            print(f"{counter}: {100*neighbour.cost/est_cost:.2f}% route solved")
-            if np.isnan(est_cost) or np.isinf(est_cost):
-                priority = 10 * max_priority
-            else:
-                priority = est_cost
-                max_priority = max(max_priority, priority)
-            path_ends.put((priority, counter, neighbour))
-            counter += 1
+            hc = heuristic_cost(graph, neighbour, goal)
+            if hc < np.inf:
+                est_cost = neighbour.cost + hc
+                print(f"{counter}: {100*neighbour.cost/est_cost:.2f}% route solved")
+                if np.isnan(est_cost) or np.isinf(est_cost):
+                    priority = 10 * max_priority
+                else:
+                    priority = est_cost
+                    max_priority = max(max_priority, priority)
+                path_ends.put((priority, counter, neighbour))
+                counter += 1
 
     return end_point
 

@@ -1,6 +1,0 @@
-1. Start with a straight line between points. Check if it satisfies heading / minimum straight length requirements.
-2. Add circles tangent to the start and end points in the right direction.
-    a. Move along line until minimum start/end length is met.
-    b. Check minimum straight length of new tangent.
-        i.  if circles are same direction merge them together
-        ii. if they pass each other that path will fail

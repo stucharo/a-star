@@ -78,17 +78,45 @@ def copy_pt(p, dx, dy, dt):
     new_heading = normalize_angle(in_angle + dt)
     return Point(p.x+dx, p.y+dy, new_heading, radius=p.radius)
 
-def get_shortest_route(s, g, min_bend, min_straight):
+def get_shortest_route(s, g, min_bend, min_straight, min_straight_end):
 
     min_length = np.inf
     ips = []
+    
+    d2i = dist2intersect(s, g)
+    if 0 < d2i[0] < 10*min_straight and 0 > d2i[1] > -10*min_straight_end:
+        # the two lines cross and a triangle is possible
+        # lets get a vertex at the intersection point
+        ip = Point(s.x+d2i[0]*s.dx, s.y+d2i[0]*s.dy)
+        # and the distance between the ip and tp for a minimum radius bend
+        d2t = v2t(s, ip, g, min_bend)
+        # the minimum required distance depends on whether the start is on a bend
+        if s.radius == 0:
+            min_d = 0
+        else:
+            min_d = min_straight
+        if d2i[0] > min_d + d2t and -d2i[1] > min_straight_end + d2t: 
+            # if we're here we can make a path with at least 1 bend
+            # it's length is...
+            min_length = d2i[0]-d2t + arc_length(s,ip,g,min_bend) + -1*d2i[1] + d2t
+            # and it's tangent points are
+            ips = [ip]
+        graph(s, g, ips)
 
-    # d, ip = get_length_and_vertices(s, g, min_bend, min_straight)
-    # if d < min_length:
-    #     min_length = d
-    #     ips = ip
+    d, ip = get_length_and_vertices(s, g, min_bend, min_straight, 'ineq', min_straight, min_straight_end)
+    graph(s, g, ip)
+    if d < min_length:
+        min_length = d
+        ips = ip
 
-    d, ip = get_length_and_vertices(s, g, min_bend, min_straight, 'eq', 0, 4*min_straight)
+    d, ip = get_length_and_vertices(s, g, min_bend, min_straight, 'ineq', 0, min_straight_end)
+    graph(s, g, ip)
+    if d < min_length:
+        min_length = d
+        ips = ip
+
+    d, ip = get_length_and_vertices(s, g, min_bend, min_straight, 'eq', 0, min_straight_end, s.radius)
+    graph(s, g, ip)
     if d < min_length:
         min_length = d
         ips = ip
@@ -99,9 +127,17 @@ def get_length_and_vertices(s, g, min_bend, min_straight, con, start_straight, m
 
     v = [min_straight, min_straight]
 
-    cons = [{'type': con, 'fun': con_len_ab, 'args': (s, g, min_bend, start_straight)},
+    if start_radius is not None:
+        s_bend = abs(start_radius)
+    else:
+        s_bend = min_bend
+
+    cons = [{'type': con, 'fun': con_len_ab, 'args': (s, g, s_bend, start_straight)},
             {'type': 'ineq', 'fun': con_len_bc, 'args': (s, g, min_bend, min_straight)},
             {'type': 'ineq', 'fun': con_len_cd, 'args': (s, g, min_bend, min_straight_end)}]
+        
+    if start_radius is not None:
+        cons.extend([{'type': 'ineq', 'fun': con_turn_dir_b, 'args': (s, g, start_radius)}])
     
     d = minimize(length, v, args=(s,g,min_bend, min_straight), constraints=cons)
 
@@ -126,6 +162,10 @@ def con_len_cd(vars, s, g, r, min_straight_end):
     _, b, c, d = unpack(vars, s, g)
     t = v2t(b,c,d,r)
     return vars[1] - t - min_straight_end
+
+def con_turn_dir_b(vars, s, g, start_radius):
+    a, b, c, _ = unpack(vars, s, g)
+    return turn_dir(a, c) * start_radius
 
 def length(vars, s, g, min_bend, min_straight):
     # vars is our minimization variables. these are:
@@ -167,7 +207,9 @@ def graph(s, g, ips):
     plt.arrow(g.x, g.y, 5*g.dx, 5*g.dy, head_width=0.5, color='red')
     plt.show()
 
-s = Point(0,0,pi/4,radius=-2)
-g = Point(100, 0, pi/4)
 
-graph(s, g, get_shortest_route(s, g, 1, 20)[1])
+
+s = Point(0,0,5*pi/12,radius=5)
+g = Point(100, 0, -5*pi/12)
+
+graph(s, g, get_shortest_route(s, g, 1, 20, 30)[1])

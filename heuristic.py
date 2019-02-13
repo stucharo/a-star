@@ -3,6 +3,19 @@ from scipy.optimize import minimize
 from math import pi, sin, cos, asin, acos, atan, atan2, tan
 import matplotlib.pyplot as plt
 
+
+from typing import Any
+from dataclasses import dataclass
+@dataclass
+class RouteNode:
+    x: float
+    y: float
+    dx: float
+    dy: float
+    radius: float
+    next: Any = None
+    prev: Any = None
+
 class Point():
 
     def __init__(self, x, y, heading=0, radius=0, previous=None, cost=0, heuristic_cost=0):
@@ -23,7 +36,7 @@ class Point():
         return f"({self.x:.2f}, {self.y:.2f}) + ({self.dx:.2f}, {self.dy:.2f})"
     
     def get_heuristic_path(self, g, min_bend, min_straight, min_straight_end, heading_tol, location_tol, spacing=1):
-        self.heuristic_path = get_shortest_path(self, g, min_bend, min_straight, min_straight_end, heading_tol, location_tol, spacing)[1:]
+        self.heuristic_path = get_shortest_path(self, g, min_bend, min_straight, min_straight_end, heading_tol, location_tol, spacing)
 
 
 def normalize_angle(a):
@@ -84,7 +97,10 @@ def turn_dir(p1, p2):
 def copy_pt(p, dx, dy, dt):
     in_angle = atan2(p.dy, p.dx)
     new_heading = normalize_angle(in_angle + dt)
-    return Point(p.x+dx, p.y+dy, new_heading, radius=p.radius)
+    return RouteNode(p.x+dx, p.y+dy, sin(new_heading), cos(new_heading), p.radius)
+
+def heading(n):
+    return 180 * atan2(n.dy, n.dx) / pi
 
 def get_shortest_path(s, g, min_bend, min_straight, min_straight_end, heading_tol, location_tol, spacing=1):
 
@@ -93,14 +109,14 @@ def get_shortest_path(s, g, min_bend, min_straight, min_straight_end, heading_to
 
     dsg = dist(s,g)
     sp = copy_pt(s, s.dx*dsg, s.dy*dsg,0)
-    if abs(s.heading-g.heading) < heading_tol and dist(sp, g) < location_tol:
+    if abs(heading(s)-heading(g)) < heading_tol and dist(sp, g) < location_tol:
         return path(s, g, spacing=spacing)
 
     d2i = dist2intersect(s, g)
     if 0 < d2i[0] < 10*min_straight and 0 > d2i[1] > -10*min_straight_end:
         # the two lines cross and a triangle is possible
         # lets get a vertex at the intersection point
-        ip = Point(s.x+d2i[0]*s.dx, s.y+d2i[0]*s.dy)
+        ip = RouteNode(s.x+d2i[0]*s.dx, s.y+d2i[0]*s.dy, 1, 0, 0)
         # and the distance between the ip and tp for a minimum radius bend
         d2t = v2t(s, ip, g, min_bend)
         # the minimum required distance depends on whether the start is on a bend
@@ -132,9 +148,21 @@ def get_shortest_path(s, g, min_bend, min_straight, min_straight_end, heading_to
             bs = bends
     if min_length < np.inf:
         p = path(s, g, bs, spacing)
-        return p
+        return as_tuples(p)
     else:
-        return []
+        return None
+
+def as_tuples(path):
+    s = RouteNode(path[0].x, path[0].y, path[0].dx, path[0].dy, path[0].radius)
+    prev = s
+
+    for p in path[1:]:
+        r = RouteNode(p.x, p.y, p.dx, p.dy, p.radius, None, prev)
+        prev.next = r
+        prev = r
+
+    return s
+
 
 def minimize_length(s, g, min_bend, min_straight, con, start_straight, min_straight_end, start_radius=None):
 
@@ -392,10 +420,10 @@ def bend_point(start, spacing=1, radius=0):
     s.radius = radius
     bc = get_centre(s)
     dt = spacing / radius
-    new_x = bc.x+abs(radius)*cos(bc.heading+dt)
-    new_y = bc.y+abs(radius)*sin(bc.heading+dt)
-    new_t = s.heading+dt
-    return Point(new_x, new_y, new_t, radius=radius)
+    new_x = bc.x+abs(radius)*cos(heading(bc)+dt)
+    new_y = bc.y+abs(radius)*sin(heading(bc)+dt)
+    new_t = heading(s)+dt
+    return RouteNode(new_x, new_y, sin(new_t), cos(new_t), radius=radius)
 
 if __name__ == '__main__':
     s = Point(0,0,5*pi/12,radius=-5)

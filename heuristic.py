@@ -5,12 +5,14 @@ import matplotlib.pyplot as plt
 
 class Point():
 
-    def __init__(self, x, y, heading=0, radius=0):
+    def __init__(self, x, y, heading=0, radius=0, previous=None):
         self.x = x
         self.y = y
         self.dx = normalize_angle(cos(heading))
         self.dy = normalize_angle(sin(heading))
+        self.heading = heading
         self.radius = radius
+        self.previous = previous
 
     def __str__(self):
         return f"({self.x:.2f}, {self.y:.2f}) + ({self.dx:.2f}, {self.dy:.2f})"
@@ -108,26 +110,27 @@ def get_shortest_path(s, g, min_bend, min_straight, min_straight_end, heading_to
             bs = generate_bends([s, ip, g], min_bend)
             
     if s.radius != 0:
-        d, bends = get_length_and_bends(s, g, min_bend, min_straight, 'ineq', min_straight, min_straight_end)
+        d, bends = minimize_length(s, g, min_bend, min_straight, 'ineq', min_straight, min_straight_end)
         if d < min_length:
             min_length = d
             bs = bends
             
-        d, bends = get_length_and_bends(s, g, min_bend, min_straight, 'eq', 0, min_straight_end, s.radius)
+        d, bends = minimize_length(s, g, min_bend, min_straight, 'eq', 0, min_straight_end, s.radius)
         if d < min_length:
             min_length = d
             bs = bends
     else:
-        d, bends = get_length_and_bends(s, g, min_bend, min_straight, 'ineq', 0, min_straight_end)
+        d, bends = minimize_length(s, g, min_bend, min_straight, 'ineq', 0, min_straight_end)
         if d < min_length:
             min_length = d
             bs = bends
     if min_length < np.inf:
-        return path(s, g, bs, spacing)
+        p = path(s, g, bs, spacing)
+        return p
     else:
         return []
 
-def get_length_and_bends(s, g, min_bend, min_straight, con, start_straight, min_straight_end, start_radius=None):
+def minimize_length(s, g, min_bend, min_straight, con, start_straight, min_straight_end, start_radius=None):
 
     v = [min_straight, min_straight]
 
@@ -196,7 +199,7 @@ def unpack(vars, s, g):
     d = g
     return (a, b, c, d)
 
-def graph(path):
+def graph(s, g, path):
 
     if len(path) > 1:
         ps = np.array([(p.x, p.y) for p in path])
@@ -252,7 +255,9 @@ def path(s, g, bends=[], spacing=1):
     p = [s]
     # if we just have a straight path
     if len(bends) == 0:
-        p.extend(straight_points(s, g, spacing)[0])
+        sp = straight_points(s, g, spacing)[0]
+        if sp is not None:
+            p.extend(sp)
         return p
     else:
         # build up a path
@@ -260,7 +265,8 @@ def path(s, g, bends=[], spacing=1):
         sb = bends[0][0]
         if s.x != sb.x or s.y != sb.y:
             pts, lo = straight_points(s, sb, spacing)
-            p.extend(pts)
+            if pts is not None:
+                p.extend(pts)
         else:
             lo = 0
         # loop through each bend
@@ -269,20 +275,25 @@ def path(s, g, bends=[], spacing=1):
             nb = bends[n+1]
             # arc
             pts, lo = bend_points(b[0], b[1], spacing, lo)
-            p.extend(pts)
+            if pts is not None:
+                p.extend(pts)
             # then straight
             if b[1].x != nb[0].x or b[1].y != nb[0].y :
                 pts, lo = straight_points(b[1], nb[0], spacing, lo)
-                p.extend(pts)
+                if pts is not None:
+                    p.extend(pts)
         # last bend
         b = bends[-1]
         pts, lo = bend_points(b[0], b[1], spacing, lo)
-        p.extend(pts)
+        if pts is not None:
+            p.extend(pts)
         # last straight
         bg = b[1]
         if (g.x != bg.x or g.y != bg.y 
             or g.dx != bg.dx or g.dy != bg.dy):
-            p.extend(straight_points(bg, g, spacing, lo)[0])
+            sp = straight_points(bg, g, spacing, lo)[0]
+            if sp is not None:
+                p.extend(straight_points(bg, g, spacing, lo)[0])
         return p
 
 def straight_points(s, g, spacing, leftover=0):
@@ -293,6 +304,12 @@ def straight_points(s, g, spacing, leftover=0):
     a point at `s`.
     """
     ds = spacing - leftover
+    dsg = dist(s, g)
+    if ds > dist(s, g):
+        # our 1st point is further than the length
+        # of the straight so just return no points
+        # and the leftover
+        return None, dsg - ds
     sp = Point(s.x + ds*s.dx, s.y + ds*s.dy, atan2(s.dy, s.dx))
     d = dist(sp, g)
     incs = int(d/spacing)
@@ -303,25 +320,45 @@ def straight_points(s, g, spacing, leftover=0):
     return [Point(x, y, heading=heading) for x, y in np.stack((xs, ys), axis=-1)], lo
 
 def bend_points(bs, bg, spacing, leftover=0):
+    # get the centre of the circle
     bc = get_centre(bs)
     r = abs(bs.radius)
     d = direction(bs)
-    # theta start is normal to bs
+    # create 2 vectors from the centre of the circle towards 
+    # the start and goal points respoectively
     vs = copy_pt(bs, bc.x-bs.x, bc.y-bs.y, -d*pi/2)
     vg = copy_pt(bg, bc.x-bg.x, bc.y-bg.y, -d*pi/2)
-    # copy and move it for leftover
+    # starting sweep angle
+    sa = angle_between(vs, vg, d)
+    # check we can actually fit a point into the arc
     dt = d * (spacing-leftover) / r
-    vs = copy_pt(vs, 0, 0, dt)
+    if dt < sa:
+        # we can get a point in, so we move our start
+        # point to include the leftover from the previous
+        # section
+        vs = copy_pt(vs, 0, 0, dt)
+    else:
+        # we go past our endpoint with the leftover
+        # so we should just return no points and the
+        # new leftover
+        return None, spacing - leftover - sa * r
     # get number of whole increments
     ts = atan2(vs.dy, vs.dx)
     tg = atan2(vg.dy, vg.dx)
     tt = angle_between(vs, vg, d)
     dt = d * spacing / r
     inc = int(tt / dt)
-    tl = np.linspace(ts, ts + inc*dt, inc+1)
-    p = [Point(bc.x+r*cos(t), bc.y+r*sin(t), t + d*pi/2) for t in tl]
-    leftover = abs(abs(tg)-abs(normalize_angle(tl[-1]))) * r
-    return p, leftover
+    if inc > 0:
+        tl = np.linspace(ts, ts + inc*dt, inc+1)
+        p = [Point(bc.x+r*cos(t), bc.y+r*sin(t), t + d*pi/2) for t in tl]
+        leftover = abs(abs(tg)-abs(normalize_angle(tl[-1]))) * r
+        return p, leftover
+    else:
+        # we can only fit in our start point so we return 
+        # that plus the leftover
+        p = [Point(bc.x+r*cos(ts), bc.y+r*sin(ts), ts + d*pi/2)]
+        lo = spacing - angle_between(vs, vg, d) * r
+        return p, lo
 
 def get_centre(p):
     rp = copy_pt(p, 0, 0, -1*direction(p)*pi/2)
@@ -343,6 +380,16 @@ def angle_between(s, g, d):
         else:
             angle += 2 * pi
     return angle
+
+def bend_point(start, spacing=1, radius=0):
+    s = copy_pt(start,0,0,0)
+    s.radius = radius
+    bc = get_centre(s)
+    dt = spacing / radius
+    new_x = bc.x+abs(radius)*cos(bc.heading+dt)
+    new_y = bc.y+abs(radius)*sin(bc.heading+dt)
+    new_t = s.heading+dt
+    return Point(new_x, new_y, new_t, radius=radius)
 
 if __name__ == '__main__':
     s = Point(0,0,5*pi/12,radius=-5)

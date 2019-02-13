@@ -9,25 +9,11 @@ import random
 from heuristic import Point, copy_pt, dist, get_shortest_path, bend_point, direction
 
 spacing = 1
-min_straight_length = 5
-bend_radius = [5, 10]
+min_straight_length = 10
+bend_radius = [10, 20]
 theta_tol = 3 * pi / 180
 heading_tol = pi/180
 location_tol = 1
-
-class Grid:
-    def __init__(self, eastings, northings, costs):
-        self.eastings = eastings
-        self.northings = northings
-        self.costs = costs
-        self.get_cost = self.create_interpolator()
-
-    def create_interpolator(self):
-        points = np.array((self.eastings.flatten(), self.northings.flatten())).T
-        values = self.costs.flatten()
-        def get_cost(X, Y):
-            return griddata( points, values, (X,Y) )
-        return get_cost
 
 def neighbours(pt):
     n = []
@@ -105,7 +91,7 @@ def plot_graph(start, goal, graph, path_ends):
     plt.axis([0,50,0,50], option='equal')
     plt.show()
 
-def a_star_pipe(graph, start, goal):
+def a_star_pipe(start, goal):
     path_ends = PriorityQueue()
     start.cost = 0
     path_ends.put((0, 0, start))
@@ -114,18 +100,22 @@ def a_star_pipe(graph, start, goal):
 
     while not path_ends.empty():
         # Get path end most likely to be cheapest
-        end_point = path_ends.get()[2]
+        cur_point = path_ends.get()[2]
+
+        neighbours = get_neighbours(cur_point)
 
         for neighbour in neighbours(end_point):
             neighbour.previous = end_point
             neighbour.cost = end_point.cost + cost(graph, end_point, neighbour)
 
-            if counter % 500 == 0:
-                plot_graph(start, goal, graph, path_ends.queue)
+            plot_graph(start, goal, graph, path_ends.queue)
 
             if neighbour == goal:
                 return neighbour
+
+            hp = get_shortest_path()
             hc = heuristic_cost(graph, neighbour, goal)
+
             if hc < np.inf:
                 est_cost = neighbour.cost + hc
                 print(f"{counter}: {100*neighbour.cost/est_cost:.2f}% route solved")
@@ -146,7 +136,7 @@ if __name__ == '__main__':
     X = np.linspace(0, size, size+1)
     Y = np.linspace(0, size, size+1)
     X, Y = np.meshgrid(X, Y)
-    Z = np.random.uniform(0,100, size=X.shape)
+    Z = np.ones(X.shape)
     graph = Grid(X, Y, Z)
 
     start = Point(10, 10, 0)

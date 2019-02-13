@@ -78,7 +78,7 @@ def copy_pt(p, dx, dy, dt):
     new_heading = normalize_angle(in_angle + dt)
     return Point(p.x+dx, p.y+dy, new_heading, radius=p.radius)
 
-def get_shortest_route(s, g, min_bend, min_straight, min_straight_end):
+def get_shortest_path(s, g, min_bend, min_straight, min_straight_end):
 
     min_length = np.inf
     bs = []
@@ -118,7 +118,7 @@ def get_shortest_route(s, g, min_bend, min_straight, min_straight_end):
             min_length = d
             bs = bends
 
-    return min_length, bs
+    return path(s, g, bs, 1)
 
 def get_length_and_bends(s, g, min_bend, min_straight, con, start_straight, min_straight_end, start_radius=None):
 
@@ -189,13 +189,10 @@ def unpack(vars, s, g):
     d = g
     return (a, b, c, d)
 
-def graph(s, g, bends):
+def graph(path):
 
-    pts = [s, g]
-    if len(bends) > 0:
-        for b in bends:
-            pts[-1:-1] = [b[0], b[1]]
-        ps = np.array([(p.x, p.y) for p in pts])
+    if len(path) > 1:
+        ps = np.array([(p.x, p.y) for p in path])
         plt.plot(ps[:,0], ps[:,1])
         plt.axis('equal')
     else:
@@ -229,16 +226,119 @@ def generate_bends(pts, min_bend, start_bend=None):
         bs.dy = (pts[i].y - pts[i-1].y) / d1
         bs.x += bs.dx * (d1 - t)
         bs.y += bs.dy * (d1 - t)
+        d = turn_dir(bs, pts[i+1])
+        bs.radius = d*r
         bg = Point(pts[i].x, pts[i].y)
         bg.dx = (pts[i+1].x - pts[i].x) / d2
         bg.dy = (pts[i+1].y - pts[i].y) / d2
         bg.x += bg.dx * t
         bg.y += bg.dy * t
+        bg.radius = d*r
 
         bends.append((bs, bg))
     return bends
 
-s = Point(0,0,5*pi/12,radius=0)
-g = Point(100, 0, -5*pi/12)
+def path(s, g, bends=[], spacing=1):
+    """ Construct a path from s to g, at increments of spacing, around
+    each bend listed in bends. Bends are defined by (bs, bg).
+    """
+    p = [s]
+    # if we just have a straight path
+    if len(bends) == 0:
+        p.extend(straight_points(s, g, spacing)[0])
+        return p
+    else:
+        # build up a path
+        # first straight
+        sb = bends[0][0]
+        if s.x != sb.x or s.y != sb.y:
+            pts, lo = straight_points(s, sb, spacing)
+            p.extend(pts)
+        else:
+            lo = 0
+        # loop through each bend
+        for n in range(len(bends) - 1):
+            b = bends[n]
+            nb = bends[n+1]
+            # arc
+            pts, lo = bend_points(b[0], b[1], spacing, lo)
+            p.extend(pts)
+            # then straight
+            if b[1].x != nb[0].x or b[1].y != nb[0].y :
+                pts, lo = straight_points(b[1], nb[0], spacing, lo)
+                p.extend(pts)
+        # last bend
+        b = bends[-1]
+        pts, lo = bend_points(b[0], b[1], spacing, lo)
+        p.extend(pts)
+        # last straight
+        bg = b[1]
+        if (g.x != bg.x or g.y != bg.y 
+            or g.dx != bg.dx or g.dy != bg.dy):
+            p.extend(straight_points(bg, g, spacing, lo)[0])
+        return p
 
-graph(s, g, get_shortest_route(s, g, 1, 20, 30)[1])
+def straight_points(s, g, spacing, leftover=0):
+    """ Generate a list of points along a straight line between the `s`
+    and `g` Points. Note that this assumes the previous section 
+    included the first point of this list, so this list returns the
+    next point along the path. That is, this routine will never return
+    a point at `s`.
+    """
+    ds = spacing - leftover
+    sp = Point(s.x + ds*s.dx, s.y + ds*s.dy, atan2(s.dy, s.dx))
+    d = dist(sp, g)
+    incs = int(d/spacing)
+    lo = d - incs*spacing 
+    xs = np.linspace(sp.x, sp.x+sp.dx*incs, incs+1)
+    ys = np.linspace(sp.y, sp.y+sp.dy*incs, incs+1)
+    heading = atan2(sp.dy, sp.dx)
+    return [Point(x, y, heading=heading) for x, y in np.stack((xs, ys), axis=-1)], lo
+
+def bend_points(bs, bg, spacing, leftover=0):
+    bc = get_centre(bs)
+    r = abs(bs.radius)
+    d = direction(bs)
+    # theta start is normal to bs
+    vs = copy_pt(bs, bc.x-bs.x, bc.y-bs.y, -d*pi/2)
+    vg = copy_pt(bg, bc.x-bg.x, bc.y-bg.y, -d*pi/2)
+    # copy and move it for leftover
+    dt = d * (spacing-leftover) / r
+    vs = copy_pt(vs, 0, 0, dt)
+    # get number of whole increments
+    ts = atan2(vs.dy, vs.dx)
+    tg = atan2(vg.dy, vg.dx)
+    tt = angle_between(vs, vg, d)
+    dt = d * spacing / r
+    inc = int(tt / dt)
+    tl = np.linspace(ts, ts + inc*dt, inc+1)
+    p = [Point(bc.x+r*cos(t), bc.y+r*sin(t), t + d*pi/2) for t in tl]
+    leftover = abs(abs(tg)-abs(normalize_angle(tl[-1]))) * r
+    return p, leftover
+
+def get_centre(p):
+    rp = copy_pt(p, 0, 0, -1*direction(p)*pi/2)
+    return copy_pt(rp, -1*abs(p.radius)*rp.dx, -1*abs(p.radius)*rp.dy, 0)
+
+def direction(p):
+    return p.radius / abs(p.radius)
+
+def angle_between(s, g, d):
+    # dot product between [x1, y1] and [x2, y2]
+    dot = s.dx*g.dx + s.dy*g.dy   
+    # determinant   
+    det = s.dx*g.dy - s.dy*g.dx   
+    # anti-clockwise angle
+    angle = atan2(det, dot)
+    if d*angle < 0:
+        if angle >= 0:
+            angle -= 2 * pi
+        else:
+            angle += 2 * pi
+    return angle
+
+if __name__ == '__main__':
+    s = Point(0,0,5*pi/12,radius=-5)
+    g = Point(100, 0, -5*pi/12)
+
+    graph(get_shortest_path(s, g, 10, 20, 30))

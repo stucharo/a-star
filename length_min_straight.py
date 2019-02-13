@@ -78,54 +78,26 @@ def copy_pt(p, dx, dy, dt):
     new_heading = normalize_angle(in_angle + dt)
     return Point(p.x+dx, p.y+dy, new_heading, radius=p.radius)
 
-# The lengths minimization must be constrained to ensure that the rules
-# of he routing tool are upheld
-
-def con_dist_ab(vars, s, g, r, min_straight_start, min_straight):
-    """ Minimum straight distance from a to b"""
-    a, b, c, _ = unpack(s, g, vars)
-    return round(dist(a,b) - v2t(a,b,c,r) - min_straight_start, 5)
-
-def con_dist_bc(vars, s, g, r, min_straight):
-    """ Minimum straight distance from b to e (if e is not inline)"""
-    a, b, c, d = unpack(s, g, vars)
-    return dist(b,c) - v2t(a,b,c,r) - v2t(b,c,d,r) - min_straight
-
-def con_dist_cd(vars, s, g, r, min_straight_end, min_straight):
-    """ Minimum straight distance from c to d"""
-    _, b, c, d = unpack(s, g, vars)
-    return dist(c,d) - v2t(b,c,d,r) - min_straight_end
-
-def con_angles(vars, s, g, r, min_straight):
-    # constraint to make sure all angles are greater than 0
-    a, b, c, d = unpack(s, g, vars)
-    return angle(a,b,c) * angle(b,c,d)
-
-def con_turn_dir_b(vars, s, g):
-    _, _, c, _ = unpack(s, g, vars)
-    return turn_dir(s, c) * s.radius
-
-def get_shortest_route(s, g, min_bend, min_straight, min_straight_end):
+def get_shortest_route(s, g, min_bend, min_straight):
 
     min_length = np.inf
     ips = []
 
-    d, ip = get_length_and_vertices(s, g, min_bend, min_straight, min_straight_end, 'ineq', min_straight)
+    d, ip = get_length_and_vertices(s, g, min_bend, min_straight, min_straight_end)
     if d < min_length:
         min_length = d
         ips = ip
     
     return min_length, ips
 
-def get_length_and_vertices(s, g, min_bend, min_straight, min_straight_end, con, min_straight_start, s_rad=None):
+def get_length_and_vertices(s, g, min_bend, min_straight, min_straight_end):
 
-    cons = [{'type': 'ineq', 'fun': con_dist_ab, 'args': (s, g, min_bend, min_straight_start, min_straight)},
+    cons = [{'type': 'ineq', 'fun': con_dist_ab, 'args': (s, g, min_bend, min_straight)},
             {'type': 'ineq', 'fun': con_dist_bc, 'args': (s, g, min_bend, min_straight)},
-            {'type': 'ineq', 'fun': con_dist_cd, 'args': (s, g, min_bend, min_straight_end, min_straight)},
-            {'type': 'ineq', 'fun': con_angles, 'args': (s, g, min_bend, min_straight)}]
-    
-    if s_rad is not None:
-        cons.extend({'type': 'ineq', 'fun': con_turn_dir_b, 'args': (s, g)})
+            {'type': 'ineq', 'fun': con_dist_cd, 'args': (s, g, min_bend, min_straight)},
+            {'type': 'ineq', 'fun': lambda vars: vars[0]},
+            {'type': 'ineq', 'fun': lambda vars: vars[1]},
+            {'type': 'ineq', 'fun': con_angles, 'args': (s, g)}]
     
     start_vars = np.array([min_straight, min_straight_end])
 
@@ -143,6 +115,39 @@ def get_length_and_vertices(s, g, min_bend, min_straight, min_straight_end, con,
         ips = []
         
     return l, ips
+
+# The lengths minimization must be constrained to ensure that the rules
+# of he routing tool are upheld
+
+def con_dist_ab(vars, s, g, r, min_straight):
+    """ Minimum straight distance from a to b"""
+    a, b, c, _ = unpack(s, g, vars)
+    return round(dist(a,b) - v2t(a,b,c,r) - min_straight, 5)
+
+def con_dist_bc(vars, s, g, r, min_straight):
+    """ Minimum straight distance from b to e (if e is not inline)"""
+    a, b, c, d = unpack(s, g, vars)
+    return dist(b,c) - v2t(a,b,c,r) - v2t(b,c,d,r) - min_straight
+
+def con_dist_cd(vars, s, g, r, min_straight):
+    """ Minimum straight distance from c to d"""
+    _, b, c, d = unpack(s, g, vars)
+    return dist(c,d) - v2t(b,c,d,r) - min_straight
+
+def con_dir_ab_cd(vars, s, g):
+    if vars[0] > 0 and vars[1] > 0:
+        return 1
+    else:
+        return 0
+
+def con_angles(vars, s, g):
+    # constraint to make sure all angles are greater than 0
+    a, b, c, d = unpack(s, g, vars)
+    return angle(a,b,c) * angle(b,c,d)
+
+def con_turn_dir_b(vars, s, g):
+    _, _, c, _ = unpack(s, g, vars)
+    return turn_dir(s, c) * s.radius
 
 def length(vars, s, g, min_bend, min_straight):
     # vars is our minimization variables. these are:
@@ -194,19 +199,19 @@ def graph(s, g, ips):
 
 if __name__ == '__main__':
     import random
-    actual = False
+    actual = True
     if actual:
         min_rad = 3
         rads = [-15, -14, -13, -12, -11, -10, -9, -8, -7, -6, -5, -4, -3, 0, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
         start_rad = 13
-        min_straight = 9
-        min_straight_end = 4
-        sx = 94.98831347446426
-        sy = 7.36936759612612
-        sh = -0.3962243515382049
-        gx = 27.63977577647897
-        gy = 74.59474572842517
-        gh = -0.7216333115982492
+        min_straight = 1
+        min_straight_end = 1
+        sx = 10
+        sy = 10
+        sh = 5 * pi / 12
+        gx = 80
+        gy = 50
+        gh = 7*pi/12
     else:
         max_rad = 15
         min_rad = random.randint(2, max_rad)
@@ -230,7 +235,7 @@ if __name__ == '__main__':
     s = Point(sx, sy, sh, radius=start_rad)
     g = Point(gx, gy, gh)
 
-    r = get_shortest_route(s, g, min_rad, min_straight, min_straight_end)
+    r = get_shortest_route(s, g, min_rad, min_straight)
 
     graph(s, g, r[1])
 

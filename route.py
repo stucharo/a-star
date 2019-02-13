@@ -140,6 +140,11 @@ def route_length(vars, s, g, min_straight, min_bend):
 
 def get_shortest_route(s, g, min_bend, min_straight, min_straight_end):
     """
+    Instead of finding every possible route, including extremely
+    complex routes, we should limit ourselves to simple routes that are
+    likely to be adopted. This is basically a 1 bend or 2 bend option
+    from start to goal.
+
     Parameters
     ----------
     s: `Point`
@@ -156,7 +161,8 @@ def get_shortest_route(s, g, min_bend, min_straight, min_straight_end):
     Returns
     -------
     Bends
-        List of tuples containing bend start and end points along the route
+        List of tuples containing bend start and end points along the
+        route
 
     """
     # we're collecting the lengths of various route options. let's do that in a list of 
@@ -185,15 +191,12 @@ def get_shortest_route(s, g, min_bend, min_straight, min_straight_end):
             # it's length is...
             min_length = d2i[0]-d2t + arc_length(s,ip,g,min_bend) + -1*d2i[1] + d2t
             # and it's tangent points are
-            td = turn_dir(s, g)
-            st = copy_pt(s, s.dx*(d2i[0]-d2t), s.dy*(d2i[0]-d2t), td*pi/2)
-            gt = copy_pt(g, g.dx*(d2i[1]+d2t), g.dy*(d2i[1]+d2t), td*pi/2)
             ips = [ip]
 
-    # we know there is no option for a single bend path if the two vectors don't cross
+    # we know there is no option for a single bend path if the two vectors don't cross far
+    # enough apart
 
-    # now we can investigate 2 and 3 bend options; however, there's no real point in
-    # looking at 3 bend paths, because that can't ever be a good path.
+    # now we can investigate a 2 bend option.
     
     # can we fit a 2 bend path in?
     # there is 3 options depending on whether the start is on a bend

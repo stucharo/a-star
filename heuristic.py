@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 class Point():
 
-    def __init__(self, x, y, heading=0, radius=0, previous=None):
+    def __init__(self, x, y, heading=0, radius=0, previous=None, cost=0, heuristic_cost=0):
         self.x = x
         self.y = y
         self.dx = normalize_angle(cos(heading))
@@ -13,12 +13,18 @@ class Point():
         self.heading = heading
         self.radius = radius
         self.previous = previous
+        self.cost = cost
+        self.heuristic_path = None
 
     def __str__(self):
         return f"({self.x:.2f}, {self.y:.2f}) + ({self.dx:.2f}, {self.dy:.2f})"
 
     def __repr__(self):
         return f"({self.x:.2f}, {self.y:.2f}) + ({self.dx:.2f}, {self.dy:.2f})"
+    
+    def get_heuristic_path(self, g, min_bend, min_straight, min_straight_end, heading_tol, location_tol, spacing=1):
+        self.heuristic_path = get_shortest_path(self, g, min_bend, min_straight, min_straight_end, heading_tol, location_tol, spacing)[1:]
+
 
 def normalize_angle(a):
     """ Maintain angle between in range -pi <= a < pi """
@@ -105,7 +111,7 @@ def get_shortest_path(s, g, min_bend, min_straight, min_straight_end, heading_to
         if d2i[0] > min_d + d2t and -d2i[1] > min_straight_end + d2t: 
             # if we're here we can make a path with at least 1 bend
             # it's length is...
-            min_length = d2i[0]-d2t + arc_length(s,ip,g,min_bend) + -1*d2i[1] + d2t
+            min_length = d2i[0]-d2t + arc_length(s,ip,g,min_bend) + -1*d2i[1] - d2t
             # and it's tangent points are
             bs = generate_bends([s, ip, g], min_bend)
             
@@ -309,7 +315,7 @@ def straight_points(s, g, spacing, leftover=0):
         # our 1st point is further than the length
         # of the straight so just return no points
         # and the leftover
-        return None, dsg - ds
+        return None, ds - dsg
     sp = Point(s.x + ds*s.dx, s.y + ds*s.dy, atan2(s.dy, s.dx))
     d = dist(sp, g)
     incs = int(d/spacing)
@@ -331,8 +337,8 @@ def bend_points(bs, bg, spacing, leftover=0):
     # starting sweep angle
     sa = angle_between(vs, vg, d)
     # check we can actually fit a point into the arc
-    dt = d * (spacing-leftover) / r
-    if dt < sa:
+    dt = d * leftover / r
+    if abs(dt) < abs(sa):
         # we can get a point in, so we move our start
         # point to include the leftover from the previous
         # section

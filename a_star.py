@@ -10,86 +10,42 @@ from heuristic import Point, copy_pt, dist, get_shortest_path, bend_point, direc
 
 spacing = 1
 min_straight_length = 10
-bend_radius = [10, 20]
+bend_radius = [5]
 theta_tol = 3 * pi / 180
 heading_tol = pi/180
 location_tol = 1
 
-def neighbours(pt):
-    n = []
+def get_neighbours(pt, goal):
+    ns = []
     if pt.radius != 0:
+        # if we are on a bend and approaching the intersection with the last straight, we need to make sure that the bend neighbour doesn't continue further around the bend than neccessary and leave us unable to get to the end vector
         # we keep on this bend or move the minimum straight length
-        n.append(bend_point(pt, spacing, pt.radius))
+        bp = bend_point(pt, spacing, pt.radius)
+        bp.previous = pt
+        bp.cost = bp.previous.cost + cost(spacing)
+        ns.append(bp)
         sp = copy_pt(pt, min_straight_length*pt.dx, min_straight_length*pt.dy, 0)
         sp.radius = 0
-        n.append(sp)
+        sp.previous = pt
+        sp.cost = sp.previous.cost + cost(min_straight_length)
+        ns.append(sp)
     else:
         # we can try every bend angle
         for r in bend_radius:
             for d in [1, -1]:
                 dr = d * r
-                n.append(bend_point(pt, spacing, dr))
-        n.append(copy_pt(pt, spacing*pt.dx, spacing*pt.dy, 0))
-    return n
+                bp = bend_point(pt, spacing, dr)
+                bp.previous = pt
+                bp.cost = bp.previous.cost + cost(spacing)
+                ns.append(bp)
+        sp = copy_pt(pt, spacing*pt.dx, spacing*pt.dy, 0)
+        sp.previous = pt
+        sp.cost = sp.previous.cost + cost(spacing)
+        ns.append(sp)
+    return ns
 
-def cost(grid, prev_p, p):
-    d = dist(prev_p, p)
-    pts = max(2, myround(d / spacing, spacing) + 1)
-    xs = np.linspace(prev_p.x, p.x, pts)
-    ys = np.linspace(prev_p.y, p.y, pts)
-    costs = grid.get_cost(xs, ys)
-    cost = np.trapz(costs, dx=d/(pts-1))
-    return cost
-    
-def heuristic_cost(self, p, goal):
-    pts = []
-    cur_p = p
-    while cur_p.previous is not None:
-        pts.append((p.previous.x, p.previous.y))
-        cur_p = cur_p.previous
-    heuristic_path = get_shortest_path(p, goal, min(bend_radius), min_straight_length, min_straight_length, heading_tol, location_tol, spacing)
-    #plot(pts + [(p.x, p.y) for p in heuristic_path])
-    if len(heuristic_path) > 0:
-        pts = np.array([(p.x, p.y) for p in heuristic_path])
-        xs = pts[:,0]
-        ys = pts[:,1]
-        costs = self.get_cost(xs, ys)
-        if np.isnan(costs.max()) or np.isnan(costs.min()):
-            return 100_000_000
-        cost = np.trapz(costs, dx=spacing)
-        return cost
-    else:
-        return 100_000_000
-
-def plot(path):
-    p = np.asarray(path)
-    xs = p[:,0]
-    ys = p[:,1]
-    plt.plot(xs, ys)
-    plt.show()
-
-def myround(num, div):
-   whole = int(num/div)
-   if (num%div)/div >= 0.5:
-        return div * (whole + 1)
-   else:
-        return div * whole
-
-def plot_graph(start, goal, graph, path_ends):
-    fig, ax = plt.subplots()
-    ax.arrow(start.x, start.y, 5*start.dx, 5*start.dy, head_width=0.5, head_length=1)
-    ax.arrow(goal.x, goal.y, 5*goal.dx, 5*goal.dy, head_width=0.5, head_length=1)
-    plt.contour(graph.eastings, graph.northings, graph.costs)
-    for e in path_ends:
-        p = e[2]
-        pts = [(p.x, p.y)]
-        while p.previous is not None:
-            pts.append((p.previous.x, p.previous.y))
-            p = p.previous
-        pts = np.array(pts)
-        plt.plot(pts[:,0], pts[:,1])
-    plt.axis([0,50,0,50], option='equal')
-    plt.show()
+def cost(l):
+    return l
 
 def a_star_pipe(start, goal):
     path_ends = PriorityQueue()
@@ -102,47 +58,63 @@ def a_star_pipe(start, goal):
         # Get path end most likely to be cheapest
         cur_point = path_ends.get()[2]
 
-        neighbours = get_neighbours(cur_point)
+        neighbours = get_neighbours(cur_point, goal)
 
-        for neighbour in neighbours(end_point):
-            neighbour.previous = end_point
-            neighbour.cost = end_point.cost + cost(graph, end_point, neighbour)
-
-            plot_graph(start, goal, graph, path_ends.queue)
-
-            if neighbour == goal:
+        for neighbour in neighbours:
+            
+            if dist(neighbour, goal) < location_tol and abs(neighbour.heading - goal.heading) < heading_tol:
                 return neighbour
 
-            hp = get_shortest_path()
-            hc = heuristic_cost(graph, neighbour, goal)
+            hp = neighbour.get_heuristic_path(goal, min(bend_radius),
+                min_straight_length, min_straight_length, heading_tol,
+                location_tol, spacing)
+            
+            #graph(neighbour, goal, hp)
+            if len(hp) == 0:
+                hc = 100_000_000
+            else:
+                graph(neighbour, goal, hp)
+                hc = cost(len(hp) * spacing)
 
-            if hc < np.inf:
-                est_cost = neighbour.cost + hc
-                print(f"{counter}: {100*neighbour.cost/est_cost:.2f}% route solved")
-                if np.isnan(est_cost) or np.isinf(est_cost):
-                    priority = 10 * max_priority
-                else:
-                    priority = est_cost
-                    max_priority = max(max_priority, priority)
-                path_ends.put((priority, counter, neighbour))
-                counter += 1
+            priority = neighbour.cost + hc
+
+            print(f"{counter}: {100*neighbour.cost/priority:.2f}% route solved")
+
+            path_ends.put((priority, counter, neighbour))
+
+            counter += 1
 
     return end_point
 
+def graph(s, g, path):
+
+    c = s
+    prev_path = []
+    while c.previous is not None:
+        prev_path.append(c.previous)
+        c = c.previous
+    prev_path.reverse()
+    prev_path.extend(path)
+    if len(path) > 1:
+        ps = np.array([(p.x, p.y) for p in prev_path])
+        plt.plot(ps[:,0], ps[:,1])
+        plt.axis('equal')
+        plt.title(f"Cost: {cost(len(ps) * spacing)}")
+    else:
+        cx = (s.x+g.x)/2
+        cy = (s.y+g.y)/2
+        w = max(abs(g.x-s.x), abs(g.y-s.y))
+        plt.axis([cx-w/2-10,cx+w/2+10,cy-w/2-10,cy+w/2+10])
+    plt.arrow(s.x, s.y, 5*s.dx, 5*s.dy, head_width=0.5, color='green')
+    plt.arrow(g.x, g.y, 5*g.dx, 5*g.dy, head_width=0.5, color='red')
+    plt.show()
+
 if __name__ == '__main__':
-    size = 50
-    # create grid
-    np.random.seed(0)
-    X = np.linspace(0, size, size+1)
-    Y = np.linspace(0, size, size+1)
-    X, Y = np.meshgrid(X, Y)
-    Z = np.ones(X.shape)
-    graph = Grid(X, Y, Z)
 
     start = Point(10, 10, 0)
     goal = Point(40, 40, pi/2)
 
-    pt = a_star_pipe(graph, start, goal)
+    pt = a_star_pipe(start, goal)
     fig, ax = plt.subplots()
     ax.arrow(start.x, start.y, 5*start.dx, 5*start.dy, head_width=0.5, head_length=1)
     ax.arrow(goal.x, goal.y, 5*goal.dx, 5*goal.dy, head_width=0.5, head_length=1)

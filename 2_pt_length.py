@@ -81,8 +81,8 @@ def copy_pt(p, dx, dy, dt):
 def get_shortest_route(s, g, min_bend, min_straight, min_straight_end):
 
     min_length = np.inf
-    ips = []
-    
+    bs = []
+
     d2i = dist2intersect(s, g)
     if 0 < d2i[0] < 10*min_straight and 0 > d2i[1] > -10*min_straight_end:
         # the two lines cross and a triangle is possible
@@ -100,30 +100,27 @@ def get_shortest_route(s, g, min_bend, min_straight, min_straight_end):
             # it's length is...
             min_length = d2i[0]-d2t + arc_length(s,ip,g,min_bend) + -1*d2i[1] + d2t
             # and it's tangent points are
-            ips = [ip]
-        graph(s, g, ips)
+            bs = generate_bends([s, ip, g], min_bend)
+            
+    if s.radius != 0:
+        d, bends = get_length_and_bends(s, g, min_bend, min_straight, 'ineq', min_straight, min_straight_end)
+        if d < min_length:
+            min_length = d
+            bs = bends
+            
+        d, bends = get_length_and_bends(s, g, min_bend, min_straight, 'eq', 0, min_straight_end, s.radius)
+        if d < min_length:
+            min_length = d
+            bs = bends
+    else:
+        d, bends = get_length_and_bends(s, g, min_bend, min_straight, 'ineq', 0, min_straight_end)
+        if d < min_length:
+            min_length = d
+            bs = bends
 
-    d, ip = get_length_and_vertices(s, g, min_bend, min_straight, 'ineq', min_straight, min_straight_end)
-    graph(s, g, ip)
-    if d < min_length:
-        min_length = d
-        ips = ip
+    return min_length, bs
 
-    d, ip = get_length_and_vertices(s, g, min_bend, min_straight, 'ineq', 0, min_straight_end)
-    graph(s, g, ip)
-    if d < min_length:
-        min_length = d
-        ips = ip
-
-    d, ip = get_length_and_vertices(s, g, min_bend, min_straight, 'eq', 0, min_straight_end, s.radius)
-    graph(s, g, ip)
-    if d < min_length:
-        min_length = d
-        ips = ip
-    
-    return min_length, ips
-
-def get_length_and_vertices(s, g, min_bend, min_straight, con, start_straight, min_straight_end, start_radius=None):
+def get_length_and_bends(s, g, min_bend, min_straight, con, start_straight, min_straight_end, start_radius=None):
 
     v = [min_straight, min_straight]
 
@@ -142,8 +139,10 @@ def get_length_and_vertices(s, g, min_bend, min_straight, con, start_straight, m
     d = minimize(length, v, args=(s,g,min_bend, min_straight), constraints=cons)
 
     if d.success:
-        ips = [copy_pt(s,s.dx*d.x[0],s.dy*d.x[0],0), copy_pt(g,g.dx*-d.x[1],g.dy*-d.x[1],0)]
-        return d.fun, ips
+        pts = [s, g]
+        pts[1:1] = [copy_pt(s,s.dx*d.x[0],s.dy*d.x[0],0),
+                   copy_pt(g,g.dx*-d.x[1],g.dy*-d.x[1],0)]
+        return d.fun, generate_bends(pts, min_bend, s_bend)
     else:
         return np.inf, []
 
@@ -190,11 +189,12 @@ def unpack(vars, s, g):
     d = g
     return (a, b, c, d)
 
-def graph(s, g, ips):
+def graph(s, g, bends):
 
     pts = [s, g]
-    if len(ips) > 0:
-        pts[1:1] = ips
+    if len(bends) > 0:
+        for b in bends:
+            pts[-1:-1] = [b[0], b[1]]
         ps = np.array([(p.x, p.y) for p in pts])
         plt.plot(ps[:,0], ps[:,1])
         plt.axis('equal')
@@ -207,9 +207,38 @@ def graph(s, g, ips):
     plt.arrow(g.x, g.y, 5*g.dx, 5*g.dy, head_width=0.5, color='red')
     plt.show()
 
+def generate_bends(pts, min_bend, start_bend=None):
+    bends = []
+    for i in range(1,len(pts)-1):
+        if i == 1:
+            if start_bend is None:
+                r = min_bend
+            else:
+                r = start_bend
+        else:
+            r = min_bend
 
+        t = v2t(pts[i-1], pts[i], pts[i+1],r)
+        sp = pts[i-1]
+        d1 = dist(pts[i-1], pts[i])
+        d2 = dist(pts[i], pts[i+1])
 
-s = Point(0,0,5*pi/12,radius=5)
+        bs = copy_pt(sp, sp.dx*(d1-t), sp.dy*(d1-t), 0)
+        bs = Point(pts[i-1].x, pts[i-1].y)
+        bs.dx = (pts[i].x - pts[i-1].x) / d1
+        bs.dy = (pts[i].y - pts[i-1].y) / d1
+        bs.x += bs.dx * (d1 - t)
+        bs.y += bs.dy * (d1 - t)
+        bg = Point(pts[i].x, pts[i].y)
+        bg.dx = (pts[i+1].x - pts[i].x) / d2
+        bg.dy = (pts[i+1].y - pts[i].y) / d2
+        bg.x += bg.dx * t
+        bg.y += bg.dy * t
+
+        bends.append((bs, bg))
+    return bends
+
+s = Point(0,0,5*pi/12,radius=0)
 g = Point(100, 0, -5*pi/12)
 
 graph(s, g, get_shortest_route(s, g, 1, 20, 30)[1])

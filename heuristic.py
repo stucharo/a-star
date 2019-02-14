@@ -9,17 +9,16 @@ from dataclasses import dataclass, field
 
 @dataclass
 class RouteNode:
-    """ A lightweight data class to act as a one-to-many linked list of
-    route nodes. Each node can only have one previous node (parent) but
-    may have many route options from that point (child)
+    """ A lightweight data class to act as a linked list of
+    route nodes. Each node can only have one previous node (parent) 
     """
     x: float
     y: float
     dx: float
     dy: float
     radius: float
-    child: Any = None
-    parent: Any = None
+    cost: float = 0
+    prev: Any = None
 
 def normalize_angle(a):
     """ Maintain angle between in range -pi <= a < pi """
@@ -130,20 +129,16 @@ def get_shortest_path(s, g, min_bend, min_straight, min_straight_end, heading_to
             bs = bends
     if min_length < np.inf:
         p = path(s, g, bs, spacing)
-        return as_tuples(p)
+        return linked(p)
     else:
         return None
 
-def as_tuples(path):
-    s = RouteNode(path[0].x, path[0].y, path[0].dx, path[0].dy, path[0].radius)
-    prev = s
+def linked(path):
 
-    for p in path[1:]:
-        r = RouteNode(p.x, p.y, p.dx, p.dy, p.radius, None, prev)
-        prev.child = r
-        prev = r
-
-    return s
+    for i in range(1, len(path)):
+        path[i].prev = path[i-1]
+    
+    return path[-1]
 
 def minimize_length(s, g, min_bend, min_straight, con, start_straight, min_straight_end, start_radius=None):
 
@@ -217,10 +212,10 @@ def unpack(vars, s, g):
 def graph(path):
 
     ps = []
-    while path.child is not None:
+    while path.prev is not None:
         ps.append((path.x, path.y))
-        path = path.child
-    
+        path = path.prev
+    ps.reverse()
     if len(ps) > 1:
         ps = np.array(ps)
         plt.plot(ps[:,0], ps[:,1])
@@ -402,10 +397,11 @@ def bend_point(start, spacing=1, radius=0):
     s.radius = radius
     bc = get_centre(s)
     dt = spacing / radius
-    new_x = bc.x+abs(radius)*cos(heading(bc)+dt)
-    new_y = bc.y+abs(radius)*sin(heading(bc)+dt)
-    new_t = heading(s)+dt
-    return RouteNode(new_x, new_y, sin(new_t), cos(new_t), radius=radius)
+    h = atan2(s.dy, s.dx)
+    new_x = bc.x+abs(radius)*cos(atan2(bc.dy, bc.dx)+dt)
+    new_y = bc.y+abs(radius)*sin(atan2(bc.dy, bc.dx)+dt)
+    new_t = atan2(s.dy, s.dx)+dt
+    return RouteNode(new_x, new_y, cos(new_t), sin(new_t), radius=radius, prev=start)
 
 if __name__ == '__main__':
     s = RouteNode(0, 0, 0, 1, -10)

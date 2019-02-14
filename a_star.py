@@ -5,7 +5,7 @@ from typing import Any
 
 import numpy as np
 
-from heuristic import Point, bend_point, copy_pt, RouteNode, get_shortest_path
+from heuristic import RouteNode, bend_point, copy_pt, RouteNode, get_shortest_path
 
 @dataclass
 class Route:
@@ -80,10 +80,18 @@ def route_finder(s, g):
     # Estimate the first route
     r = Route(0, get_shortest_path(s, g, min(bend_rads), min_straight, min_straight, heading_tol, location_tol, spacing))
     # Move to the last tile (the goal)
-    while r.loc.next is not None:
-        r.loc = r.loc.next
-    # calculate the total cost to 
-    routes.put((cost(count_pts(r.loc.next) * spacing), counter, r))
+    while r.loc.child is not None:
+        r.loc = r.loc.child
+    # calculate the total cost to the end of the first route option
+    update_route_cost(r)
+
+    # we now have a complete route to the goal with a cost
+    # we should work back along the route, exploring alternative
+    # child nodes
+
+    final_route = explore_options(r)
+
+    routes.put((r.cost, counter, r))
 
     while not routes.empty():
 
@@ -92,12 +100,12 @@ def route_finder(s, g):
         cr = priority[2]
         print(f"Current route: {cr.loc.x}, {cr.loc.y}")
         # move to the next point along the heuristic path
-        cr.loc = cr.loc.next
+        cr.loc = cr.loc.child
         cr.cost += cost(spacing)
-        if cr.loc.next.next is None:
+        if cr.loc.child.child is None:
             # the next point is the goal so there's no 
             # point in exploring any options off this path
-            cr.loc = cr.loc.next
+            cr.loc = cr.loc.child
             cr.cost += cost(spacing)
             full_route = cr
             print(f"{cr.loc.x}, {cr.loc.y}")
@@ -117,6 +125,35 @@ def route_finder(s, g):
                     routes.put((priority, counter, r))
     
     return full_route
+
+def update_route_cost(r):
+    _r = Route(0, r.loc)
+    while _r.loc.parent is not None:
+        if _r.loc.cost == 0:
+            _r.loc.cost = spacing
+            r.cost += _r.loc.cost
+            _r.loc = _r.loc.parent
+    
+def explore_options(r):
+    # start at a goal
+    # calculate cost
+    # if it's less than the current cheapest:
+    #   store that route
+    # else:
+    #   delete th
+    # step back a node
+    # get heuristic path to goal
+    # if it exists:
+    #   move to the end and calculate total cost
+    #   if it's less than current max:
+    #       store as best route
+    #   move back a node
+    #   find alternative moves
+    #   move to that point
+    #   repeat
+    
+
+
 
 start = RouteNode(10, 10, 1, 0, 0)
 goal = RouteNode(40, 40, 0, 1, 0)

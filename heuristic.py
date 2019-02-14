@@ -4,40 +4,22 @@ from math import pi, sin, cos, asin, acos, atan, atan2, tan
 import matplotlib.pyplot as plt
 
 
-from typing import Any
-from dataclasses import dataclass
+from typing import Any, List
+from dataclasses import dataclass, field
+
 @dataclass
 class RouteNode:
+    """ A lightweight data class to act as a one-to-many linked list of
+    route nodes. Each node can only have one previous node (parent) but
+    may have many route options from that point (child)
+    """
     x: float
     y: float
     dx: float
     dy: float
     radius: float
-    next: Any = None
-    prev: Any = None
-
-class Point():
-
-    def __init__(self, x, y, heading=0, radius=0, previous=None, cost=0, heuristic_cost=0):
-        self.x = x
-        self.y = y
-        self.dx = normalize_angle(cos(heading))
-        self.dy = normalize_angle(sin(heading))
-        self.heading = heading
-        self.radius = radius
-        self.previous = previous
-        self.cost = cost
-        self.heuristic_path = None
-
-    def __str__(self):
-        return f"({self.x:.2f}, {self.y:.2f}) + ({self.dx:.2f}, {self.dy:.2f})"
-
-    def __repr__(self):
-        return f"({self.x:.2f}, {self.y:.2f}) + ({self.dx:.2f}, {self.dy:.2f})"
-    
-    def get_heuristic_path(self, g, min_bend, min_straight, min_straight_end, heading_tol, location_tol, spacing=1):
-        self.heuristic_path = get_shortest_path(self, g, min_bend, min_straight, min_straight_end, heading_tol, location_tol, spacing)
-
+    child: Any = None
+    parent: Any = None
 
 def normalize_angle(a):
     """ Maintain angle between in range -pi <= a < pi """
@@ -97,7 +79,7 @@ def turn_dir(p1, p2):
 def copy_pt(p, dx, dy, dt):
     in_angle = atan2(p.dy, p.dx)
     new_heading = normalize_angle(in_angle + dt)
-    return RouteNode(p.x+dx, p.y+dy, sin(new_heading), cos(new_heading), p.radius)
+    return RouteNode(p.x+dx, p.y+dy, cos(new_heading), sin(new_heading), p.radius)
 
 def heading(n):
     return 180 * atan2(n.dy, n.dx) / pi
@@ -158,11 +140,10 @@ def as_tuples(path):
 
     for p in path[1:]:
         r = RouteNode(p.x, p.y, p.dx, p.dy, p.radius, None, prev)
-        prev.next = r
+        prev.child = r
         prev = r
 
     return s
-
 
 def minimize_length(s, g, min_bend, min_straight, con, start_straight, min_straight_end, start_radius=None):
 
@@ -228,15 +209,20 @@ def length(vars, s, g, min_bend, min_straight):
 
 def unpack(vars, s, g):
     a = s
-    b = Point(s.x+vars[0]*s.dx, s.y+vars[0]*s.dy)
-    c = Point(g.x-vars[1]*g.dx, g.y-vars[1]*g.dy)
+    b = RouteNode(s.x+vars[0]*s.dx, s.y+vars[0]*s.dy, 0, 0, 0)
+    c = RouteNode(g.x-vars[1]*g.dx, g.y-vars[1]*g.dy, 0, 0, 0)
     d = g
     return (a, b, c, d)
 
-def graph(s, g, path):
+def graph(path):
 
-    if len(path) > 1:
-        ps = np.array([(p.x, p.y) for p in path])
+    ps = []
+    while path.child is not None:
+        ps.append((path.x, path.y))
+        path = path.child
+    
+    if len(ps) > 1:
+        ps = np.array(ps)
         plt.plot(ps[:,0], ps[:,1])
         plt.axis('equal')
     else:
@@ -259,25 +245,22 @@ def generate_bends(pts, min_bend, start_bend=None):
         else:
             r = min_bend
 
-        t = v2t(pts[i-1], pts[i], pts[i+1],r)
         sp = pts[i-1]
-        d1 = dist(pts[i-1], pts[i])
-        d2 = dist(pts[i], pts[i+1])
+        mp = pts[i]
+        ep = pts[i+1]
+        t = v2t(sp, mp, ep,r)
+        d1 = dist(sp, mp)
+        d2 = dist(mp, ep)
 
-        bs = copy_pt(sp, sp.dx*(d1-t), sp.dy*(d1-t), 0)
-        bs = Point(pts[i-1].x, pts[i-1].y)
-        bs.dx = (pts[i].x - pts[i-1].x) / d1
-        bs.dy = (pts[i].y - pts[i-1].y) / d1
+        bs = RouteNode(sp.x, sp.y,(mp.x-sp.x)/d1, (mp.y-sp.y)/d1, 0)
         bs.x += bs.dx * (d1 - t)
         bs.y += bs.dy * (d1 - t)
-        d = turn_dir(bs, pts[i+1])
+        d = turn_dir(bs, ep)
         bs.radius = d*r
-        bg = Point(pts[i].x, pts[i].y)
-        bg.dx = (pts[i+1].x - pts[i].x) / d2
-        bg.dy = (pts[i+1].y - pts[i].y) / d2
+
+        bg = RouteNode(mp.x, mp.y, (ep.x-mp.x)/d2,(ep.y-mp.y)/d2, d*r)
         bg.x += bg.dx * t
         bg.y += bg.dy * t
-        bg.radius = d*r
 
         bends.append((bs, bg))
     return bends
@@ -297,7 +280,7 @@ def path(s, g, bends=[], spacing=1):
         # build up a path
         # first straight
         sb = bends[0][0]
-        if s.x != sb.x or s.y != sb.y:
+        if abs(s.x - sb.x) > 0.00001 or abs(s.y - sb.y) > 0.00001:
             pts, lo = straight_points(s, sb, spacing)
             if pts is not None:
                 p.extend(pts)
@@ -344,14 +327,13 @@ def straight_points(s, g, spacing, leftover=0):
         # of the straight so just return no points
         # and the leftover
         return None, ds - dsg
-    sp = Point(s.x + ds*s.dx, s.y + ds*s.dy, atan2(s.dy, s.dx))
+    sp = RouteNode(s.x + ds*s.dx, s.y + ds*s.dy, s.dx, s.dy, 0)
     d = dist(sp, g)
     incs = int(d/spacing)
     lo = d - incs*spacing 
     xs = np.linspace(sp.x, sp.x+sp.dx*incs, incs+1)
     ys = np.linspace(sp.y, sp.y+sp.dy*incs, incs+1)
-    heading = atan2(sp.dy, sp.dx)
-    return [Point(x, y, heading=heading) for x, y in np.stack((xs, ys), axis=-1)], lo
+    return [RouteNode(x, y, sp.dx, sp.dy, 0) for x, y in np.stack((xs, ys), axis=-1)], lo
 
 def bend_points(bs, bg, spacing, leftover=0):
     # get the centre of the circle
@@ -384,13 +366,13 @@ def bend_points(bs, bg, spacing, leftover=0):
     inc = int(tt / dt)
     if inc > 0:
         tl = np.linspace(ts, ts + inc*dt, inc+1)
-        p = [Point(bc.x+r*cos(t), bc.y+r*sin(t), t + d*pi/2) for t in tl]
+        p = [RouteNode(bc.x+r*cos(t), bc.y+r*sin(t), sin(t + d*pi/2), cos(t + d*pi/2), bs.radius) for t in tl]
         leftover = abs(abs(tg)-abs(normalize_angle(tl[-1]))) * r
         return p, leftover
     else:
         # we can only fit in our start point so we return 
         # that plus the leftover
-        p = [Point(bc.x+r*cos(ts), bc.y+r*sin(ts), ts + d*pi/2)]
+        p = [RouteNode(bc.x+r*cos(ts), bc.y+r*sin(ts), sin(t + d*pi/2), cos(t + d*pi/2), bs.radius)]
         lo = spacing - angle_between(vs, vg, d) * r
         return p, lo
 
@@ -426,7 +408,7 @@ def bend_point(start, spacing=1, radius=0):
     return RouteNode(new_x, new_y, sin(new_t), cos(new_t), radius=radius)
 
 if __name__ == '__main__':
-    s = Point(0,0,5*pi/12,radius=-5)
-    g = Point(100, 0, -5*pi/12)
+    s = RouteNode(0, 0, 0, 1, -10)
+    g = RouteNode(100, 0, 0, -1, 0)
 
-    graph(get_shortest_path(s, g, 10, 20, 30, 1))
+    graph(get_shortest_path(s, g, 5, 10, 0, pi/180, 1,1))

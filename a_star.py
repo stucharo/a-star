@@ -72,12 +72,17 @@ def count_pts(p):
         i += 1
     return i
 
-def a_star(s, g):
+def route_finder(s, g):
 
     routes = PriorityQueue()
     counter = 0
     full_route = None
+    # Estimate the first route
     r = Route(0, get_shortest_path(s, g, min(bend_rads), min_straight, min_straight, heading_tol, location_tol, spacing))
+    # Move to the last tile (the goal)
+    while r.loc.next is not None:
+        r.loc = r.loc.next
+    # calculate the total cost to 
     routes.put((cost(count_pts(r.loc.next) * spacing), counter, r))
 
     while not routes.empty():
@@ -116,7 +121,7 @@ def a_star(s, g):
 start = RouteNode(10, 10, 1, 0, 0)
 goal = RouteNode(40, 40, 0, 1, 0)
 
-pt = a_star(start, goal)
+pt = route_finder(start, goal)
 print(pt)
 
 

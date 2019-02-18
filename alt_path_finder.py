@@ -8,11 +8,6 @@ import matplotlib.pyplot as plt
 
 from heuristic import RouteNode, bend_point, copy_pt, RouteNode, get_shortest_path, straight_points
 
-@dataclass
-class Route:
-    cost: float
-    loc: RouteNode = None
-
 bend_rads = [5, 10]
 min_straight = 10
 heading_tol = pi/180

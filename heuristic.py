@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 @dataclass
 class RouteNode:
     """ A lightweight data class to act as a linked list of
-    route nodes. Each node can only have one previous node (parent) 
+    route nodes. Each node can only have one previous node (parent).
     """
     x: float
     y: float
@@ -19,6 +19,7 @@ class RouteNode:
     radius: float
     cost: float = 0
     prev: Any = None
+    next: Any = None
 
 def normalize_angle(a):
     """ Maintain angle between in range -pi <= a < pi """
@@ -38,6 +39,8 @@ def dist2intersect(p1, p2):
         return np.array([np.inf,np.inf])
  
 def dist(p1, p2):
+    if type(p1) is list:
+        breakpoint()
     return ((p2.x-p1.x)**2+(p2.y-p1.y)**2)**0.5
 
 def angle(p1, p2, p3):
@@ -137,6 +140,7 @@ def linked(path):
 
     for i in range(1, len(path)):
         path[i].prev = path[i-1]
+        path[i-1].next = path[i]
     
     return path[-1]
 

@@ -365,13 +365,13 @@ def bend_points(bs, bg, spacing, leftover=0):
     inc = int(tt / dt)
     if inc > 0:
         tl = np.linspace(ts, ts + inc*dt, inc+1)
-        p = [RouteNode(bc.x+r*cos(t), bc.y+r*sin(t), sin(t + d*pi/2), cos(t + d*pi/2), bs.radius) for t in tl]
+        p = [RouteNode(bc.x+r*cos(t), bc.y+r*sin(t), cos(t + d*pi/2), sin(t + d*pi/2), bs.radius) for t in tl]
         leftover = abs(abs(tg)-abs(normalize_angle(tl[-1]))) * r
         return p, leftover
     else:
         # we can only fit in our start point so we return 
         # that plus the leftover
-        p = [RouteNode(bc.x+r*cos(ts), bc.y+r*sin(ts), sin(t + d*pi/2), cos(t + d*pi/2), bs.radius)]
+        p = [RouteNode(bc.x+r*cos(ts), bc.y+r*sin(ts), cos(ts+ d*pi/2), sin(ts + d*pi/2), bs.radius)]
         lo = spacing - angle_between(vs, vg, d) * r
         return p, lo
 

@@ -37,7 +37,7 @@ def minimise_cost(s, g, best_route, best_cost):
         min_straight, min_straight, heading_tol, location_tol,
         spacing)
     if r is not None:
-        graph(r)
+        # graph(r)
         add_costs(r)
         print(s.x, s.y, g.x, g.y)
         if r.cost < best_cost:
@@ -55,6 +55,7 @@ def minimise_cost(s, g, best_route, best_cost):
             alt_opts = alt_options(r)
             while len(alt_opts) > 0:
                 minimise_cost(alt_opts.pop(0), g, best_route, best_cost)
+    return (best_route, best_cost)
 
 def add_costs(r):
 
@@ -113,5 +114,5 @@ goal = RouteNode(100, 0, 0, -1, 0, 0, None)
 best_route = None
 best_cost = np.inf
 
-minimise_cost(start, goal, best_route, best_cost)
+print(minimise_cost(start, goal, best_route, best_cost))
 

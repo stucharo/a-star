@@ -289,7 +289,7 @@ def path(s, g, bends=[], spacing=1):
         # build up a path
         # first straight
         sb = bends[0][0]
-        if abs(s.x - sb.x) > 0.00001 or abs(s.y - sb.y) > 0.00001:
+        if abs(s.x - sb.x) > 0.001 or abs(s.y - sb.y) > 0.001:
             pts, lo = straight_points(s, sb, spacing)
             if pts is not None:
                 p.extend(pts)
@@ -421,4 +421,4 @@ if __name__ == '__main__':
     s = RouteNode(0, 0, 0, 1, 0)
     g = RouteNode(100, 0, 0, -1, 0)
 
-    graph(get_shortest_path(s, g, 5, 10, 0, pi/180, 1,1))
+    graph(get_shortest_path(s, g, 5, 0, 0, pi/180, 1,1))

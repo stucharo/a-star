@@ -58,6 +58,7 @@ def minimise_cost(s, g, best_route, best_cost):
             alt_opts = alt_options(r)
             while len(alt_opts) > 0:
                 minimise_cost(alt_opts.pop(0), g, best_route, best_cost)
+    return (best_route, best_cost)
 
 def add_costs(r):
 
@@ -116,5 +117,5 @@ goal = RouteNode(100, 0, 0, -1, 0, 0, None)
 best_route = None
 best_cost = np.inf
 
-minimise_cost(start, goal, best_route, best_cost)
+print(minimise_cost(start, goal, best_route, best_cost))
 

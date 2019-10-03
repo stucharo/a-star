@@ -38,6 +38,9 @@ def minimise_cost(s, g, best_route, best_cost):
         spacing)
     if r is not None:
         graph(r)
+        r = get_shortest_path(s, g, min(bend_rads),
+            min_straight, min_straight, heading_tol, location_tol,
+            spacing)
         add_costs(r)
         print(s.x, s.y, g.x, g.y)
         if r.cost < best_cost:

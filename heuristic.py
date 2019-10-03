@@ -21,6 +21,16 @@ class RouteNode:
     prev: Any = None
     next: Any = None
 
+class Straight:
+    def __init__(self, start, end):
+        self.start, self.end = start, end
+
+class Bend:
+    def __init__(self, start, end, radius):
+        self.start, self.end, self.radius = start, end, radius
+
+
+    
 def normalize_angle(a):
     """ Maintain angle between in range -pi <= a < pi """
     if a > pi:
@@ -146,7 +156,7 @@ def linked(path):
 
 def minimize_length(s, g, min_bend, min_straight, con, start_straight, min_straight_end, start_radius=None):
 
-    v = [min_straight, min_straight]
+    v = [start_straight, min_straight]
 
     if start_radius is not None:
         s_bend = abs(start_radius)
@@ -408,7 +418,7 @@ def bend_point(start, spacing=1, radius=0):
     return RouteNode(new_x, new_y, cos(new_t), sin(new_t), radius=radius, prev=start)
 
 if __name__ == '__main__':
-    s = RouteNode(0, 0, 0, 1, -10)
+    s = RouteNode(0, 0, 0, 1, 0)
     g = RouteNode(100, 0, 0, -1, 0)
 
     graph(get_shortest_path(s, g, 5, 10, 0, pi/180, 1,1))
